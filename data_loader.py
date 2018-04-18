@@ -21,7 +21,7 @@ class Dataset(data.Dataset):
             self.images = images['images_train']
             self.ans_idx = data['ans_index_train']
         else:
-            self.captions = captions['cap_val']
+            self.captions = data['cap_val']
             self.questions =  data['ques_val']
             self.answers = data['ans_val']
             raw_options = data['opt_val']
@@ -71,10 +71,10 @@ def get_loader(h5_path, img_file, train=True, batch_size=100):
 
     # data loader for custome dataset
     # please see collate_fn for details
-    data_loader = torch.utils.data.DataLoader(dataset=dataset,
-                                              batch_size=batch_size,
-                                              shuffle=True,
-                                              collate_fn=collate_fn)
+    data_loader = data.DataLoader(dataset=dataset,
+                                  batch_size=batch_size,
+                                  shuffle=True,
+                                  collate_fn=collate_fn)
 
     return data_loader
 

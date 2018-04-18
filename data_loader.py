@@ -19,6 +19,7 @@ class Dataset(data.Dataset):
             raw_options = data['opt_train']
             opt_list = data['opt_list_train'][()]
             self.images = images['images_train']
+            self.ans_idx = data['ans_index_train']
         else:
             self.captions = captions['cap_val']
             self.questions =  data['ques_val']
@@ -26,6 +27,7 @@ class Dataset(data.Dataset):
             raw_options = data['opt_val']
             opt_list = data['opt_list_val'][()]
             self.images = images['images_val']
+            self.ans_idx = data['ans_index_val']
 
         self.length = self.captions.shape[0]
         self.options = np.zeros((self.length, 10, 100, 20), dtype=np.int32)
@@ -35,7 +37,7 @@ class Dataset(data.Dataset):
                 self.options[x, y, :, :] = opt_list[raw_options[x][y]-1]
 
     def __getitem__(self, index):
-        return self.images[index], self.captions[index], self.questions[index], self.answers[index], self.options[index]
+        return self.images[index], self.captions[index], self.questions[index], self.answers[index], self.options[index], self.ans_idx[index]
 
     def __len__(self):
         return self.length
@@ -51,7 +53,7 @@ def collate_fn(data):
         return padded_seqs, lengths
 
     # seperate source and target sequences
-    img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs = zip(*data)
+    img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs = zip(*data)
 
     # merge sequences (from tuple of 1D tensor to 2D tensor)
     '''
@@ -60,7 +62,7 @@ def collate_fn(data):
     return src_seqs, src_lengths, trg_seqs, trg_lengths
     '''
 
-    return img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs
+    return img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs
 
 
 def get_loader(h5_path, img_file, train=True, batch_size=100):

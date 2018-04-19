@@ -52,13 +52,13 @@ class Embedding(nn.Module):
         return nn.Embedding.__repr__(self)
 
 
-class UtteranceEncoder(nn.Module):
+class GRUEncoder(nn.Module):
     """ 
     input: (batch_size, seq_len, embedding_dim)
     output: (batch_size, hidden_size * direction)
     """
     def __init__(self, input_size, hidden_size):
-        super(UtteranceEncoder, self).__init__()
+        super(GRUEncoder, self).__init__()
         self.input_size = input_size
         self.hidden_size = hidden_size
         self.num_layers = 1 
@@ -78,11 +78,47 @@ class UtteranceEncoder(nn.Module):
 class Encoder(nn.Module):
     def __init__(self, input_size, hidden_size, vocab_size):
         super(Encoder, self).__init__()
+        self.hidden_size = hidden_size
         self.embed = Embedding(vocab_size, input_size)
+        self.uencoder = GRUEncoder(input_size, hidden_size)
+        self.fencoder = nn.Bilinear(4096, hidden_size, hidden_size)
+        self.hencoder = GRUEncoder(hidden_size, hidden_size)
+        self.score = nn.Bilinear(hidden_size, hidden_size, 2)
+
+    def embed_utterance(self, src_seqs, src_lengths):
+        src_len, perm_idx = src_lengths.sort(0, descending=True)
+        src_sortedseqs = self.embed(src_seqs[perm_idx])
+        packed_input = pack_padded_sequence(src_sortedseqs, src_len.cpu().numpy(), batch_first=True)
+        src_vec = self.uencoder(packed_input)
+        return src_vec[perm_idx.sort(0, descending=True)[1]]
+
+    def encode_feature(self, img, utt):
+        return self.fencoder(img, utt)
 
     def forward(self, img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens):
-        pdb.set_trace()
-        ques_seqs = torch.from_numpy(np.concatenate(ques_seqs))
-        ans_seqs = torch.from_numpy(np.concatenate(ans_seqs))
-        opt_seqs = torch.from_numpy(np.concatenate(opt_seqs))
+        img_seqs = Variable(torch.from_numpy(np.vstack(img_seqs)))
+
+        ques_seqs = torch.from_numpy(np.concatenate(ques_seqs).astype(np.int32)).long()
+        ans_seqs = torch.from_numpy(np.concatenate(ans_seqs).astype(np.int32)).long()
+        opt_seqs = torch.from_numpy(np.concatenate(opt_seqs).astype(np.int32)).long()
+        opt_seqs = opt_seqs.view(-1, opt_seqs.size(2))
+
+        ques_lens = torch.from_numpy(np.concatenate(ques_lens).astype(np.int32)).long()
+        ans_lens = torch.from_numpy(np.concatenate(ans_lens).astype(np.int32)).long()
+        opt_lens = torch.from_numpy(np.concatenate(opt_lens).astype(np.int32)).long()
+        opt_lens = opt_lens.view(-1)
+        
+        ques_vec = self.embed_utterance(ques_seqs, ques_lens)
+        ans_vec = self.embed_utterance(ans_seqs, ans_lens)
+        opt_vec = self.embed_utterance(opt_seqs, opt_lens)
+
+        ques_feat = self.encode_feature(img_seqs.repeat(1, 10).view(-1, 4096), ques_vec)
+        ans_feat = self.encode_feature(img_seqs.repeat(1, 10).view(-1, 4096), ans_vec)
+        opt_feat = self.encode_feature(img_seqs.repeat(1, 1000).view(-1, 4096), opt_vec)
+        ans_logits = self.score(ques_feat, ans_feat)
+        opt_logits = self.score(ques_feat.repeat(1, 100).view(-1, self.hidden_size), opt_feat)
+        ans_score = F.log_softmax(ans_logits, dim=1)
+        opt_score = F.log_softmax(opt_logits, dim=1)
+
+        return -(ans_score[:, 1].sum() * 100 + opt_score[:, 0].sum()) / (ans_score.size(0) * 100 + opt_score.size(0))
 

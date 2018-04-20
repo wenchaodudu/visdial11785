@@ -76,10 +76,10 @@ class GRUEncoder(nn.Module):
 
 
 class Encoder(nn.Module):
-    def __init__(self, input_size, hidden_size, vocab_size):
+    def __init__(self, input_size, hidden_size, vocab_size, word_vectors):
         super(Encoder, self).__init__()
         self.hidden_size = hidden_size
-        self.embed = Embedding(vocab_size, input_size)
+        self.embed = Embedding(vocab_size, input_size, word_vectors)
         self.uencoder = GRUEncoder(input_size, hidden_size)
         self.fencoder = nn.Bilinear(4096, hidden_size, hidden_size)
         self.hencoder = GRUEncoder(hidden_size, hidden_size)
@@ -101,17 +101,23 @@ class Encoder(nn.Module):
                list(self.hencoder.rnn.parameters()) + \
                list(self.score.parameters())
 
-    def forward(self, img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens):
-        img_seqs = Variable(torch.from_numpy(np.vstack(img_seqs)))
+    def forward(self, img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens, num_neg):
+        img_seqs = Variable(torch.from_numpy(np.vstack(img_seqs))).cuda()
 
-        ques_seqs = torch.from_numpy(np.concatenate(ques_seqs).astype(np.int32)).long()
-        ans_seqs = torch.from_numpy(np.concatenate(ans_seqs).astype(np.int32)).long()
-        opt_seqs = torch.from_numpy(np.concatenate(opt_seqs).astype(np.int32)).long()
+        ques_seqs = torch.from_numpy(np.concatenate(ques_seqs).astype(np.int32)).long().cuda()
+        ans_seqs = torch.from_numpy(np.concatenate(ans_seqs).astype(np.int32)).long().cuda()
+        opt_seqs = torch.from_numpy(np.concatenate(opt_seqs).astype(np.int32)).long().cuda()
+        if num_neg < 100:
+            rand_ind = np.random.choice(100, num_neg, False)
+            rand_ind = torch.from_numpy(rand_ind).long().cuda()
+            opt_seqs = opt_seqs[:, rand_ind, :]
         opt_seqs = opt_seqs.view(-1, opt_seqs.size(2))
 
-        ques_lens = torch.from_numpy(np.concatenate(ques_lens).astype(np.int32)).long()
-        ans_lens = torch.from_numpy(np.concatenate(ans_lens).astype(np.int32)).long()
-        opt_lens = torch.from_numpy(np.concatenate(opt_lens).astype(np.int32)).long()
+        ques_lens = torch.from_numpy(np.concatenate(ques_lens).astype(np.int32)).long().cuda()
+        ans_lens = torch.from_numpy(np.concatenate(ans_lens).astype(np.int32)).long().cuda()
+        opt_lens = torch.from_numpy(np.concatenate(opt_lens).astype(np.int32)).long().cuda()
+        if num_neg < 100:
+            opt_lens = opt_lens[:, rand_ind]
         opt_lens = opt_lens.view(-1)
         
         ques_vec = self.embed_utterance(ques_seqs, ques_lens)
@@ -120,11 +126,23 @@ class Encoder(nn.Module):
 
         ques_feat = self.encode_feature(img_seqs.repeat(1, 10).view(-1, 4096), ques_vec)
         ans_feat = self.encode_feature(img_seqs.repeat(1, 10).view(-1, 4096), ans_vec)
-        opt_feat = self.encode_feature(img_seqs.repeat(1, 1000).view(-1, 4096), opt_vec)
+        opt_feat = self.encode_feature(img_seqs.repeat(1, 10*num_neg).view(-1, 4096), opt_vec)
         ans_logits = self.score(ques_feat, ans_feat)
-        opt_logits = self.score(ques_feat.repeat(1, 100).view(-1, self.hidden_size), opt_feat)
+        opt_logits = self.score(ques_feat.repeat(1, num_neg).view(-1, self.hidden_size), opt_feat)
+
+        return ans_logits, opt_logits
+
+    def loss(self, img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens, num_neg):
+        ans_logits, opt_logits = self.forward(img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens, num_neg)
         ans_score = F.log_softmax(ans_logits, dim=1)
         opt_score = F.log_softmax(opt_logits, dim=1)
 
-        return -(ans_score[:, 1].sum() * 100 + opt_score[:, 0].sum()) / (ans_score.size(0) * 100 + opt_score.size(0))
+        return -(ans_score[:, 1].sum() * num_neg + opt_score[:, 0].sum()) / (ans_score.size(0) * num_neg + opt_score.size(0))
 
+    def evaluate(self, img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens):
+        ans_logits, opt_logits = self.forward(img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens, 100)
+        ans_score = F.softmax(ans_logits, dim=1)
+        opt_score = F.softmax(opt_logits, dim=1)
+
+        return ans_score.view(-1, 10, 2)[:, :, 1], opt_score.view(-1, 100, 2)[:, :, 1]
+        

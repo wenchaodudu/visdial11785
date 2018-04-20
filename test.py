@@ -34,7 +34,7 @@ def main(config):
     mrr = 0
     for i, data in enumerate(dev_loader):
         img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens = data
-        prediction = visdial.evaluate(img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens
+        prediction = visdial.evaluate(img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens)
         prediction = prediction.data.cpu().numpy()
         labels = np.asarray(labels)
         for x in range(prediction.shape[0] // 10):

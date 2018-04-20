@@ -95,6 +95,12 @@ class Encoder(nn.Module):
     def encode_feature(self, img, utt):
         return self.fencoder(img, utt)
 
+    def parameters(self):
+        return list(self.uencoder.rnn.parameters()) + \
+               list(self.fencoder.parameters()) + \
+               list(self.hencoder.rnn.parameters()) + \
+               list(self.score.parameters())
+
     def forward(self, img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens):
         img_seqs = Variable(torch.from_numpy(np.vstack(img_seqs)))
 

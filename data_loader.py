@@ -4,6 +4,8 @@ import torch.utils.data as data
 import h5py
 import numpy as np
 import pdb
+import os
+import _pickle as pickle
 from progressbar import ProgressBar as Bar
 
 
@@ -13,27 +15,27 @@ class Dataset(data.Dataset):
         data = h5py.File(data_file, 'r')
         images = h5py.File(img_file, 'r')
         if train:
-            self.captions = data['cap_train']
-            self.questions =  data['ques_train']
-            self.ques_len = data['ques_length_train']
-            self.ans_len = data['ans_length_train']
+            self.captions = data['cap_train'][()]
+            self.questions =  data['ques_train'][()]
+            self.ques_len = data['ques_length_train'][()]
+            self.ans_len = data['ans_length_train'][()]
             raw_opt_len = data['opt_length_train'][()]
-            self.answers = data['ans_train']
-            raw_options = data['opt_train']
+            self.answers = data['ans_train'][()]
+            raw_options = data['opt_train'][()]
             opt_list = data['opt_list_train'][()]
-            self.images = images['images_train']
-            self.ans_idx = data['ans_index_train']
+            self.images = images['images_train'][()]
+            self.ans_idx = data['ans_index_train'][()]
         else:
-            self.captions = data['cap_val']
-            self.questions =  data['ques_val']
-            self.ques_len = data['ques_length_val']
-            self.ans_len = data['ans_length_val']
+            self.captions = data['cap_val'][()]
+            self.questions =  data['ques_val'][()]
+            self.ques_len = data['ques_length_val'][()]
+            self.ans_len = data['ans_length_val'][()]
             raw_opt_len = data['opt_length_val'][()]
-            self.answers = data['ans_val']
-            raw_options = data['opt_val']
+            self.answers = data['ans_val'][()]
+            raw_options = data['opt_val'][()]
             opt_list = data['opt_list_val'][()]
-            self.images = images['images_val']
-            self.ans_idx = data['ans_index_val']
+            self.images = images['images_val'][()]
+            self.ans_idx = data['ans_index_val'][()]
 
         self.length = self.captions.shape[0]
         self.options = np.zeros((self.length, 10, 100, 20), dtype=np.int32)
@@ -77,7 +79,18 @@ def collate_fn(data):
 
 def get_loader(h5_path, img_file, train=True, batch_size=100):
     # build a custom dataset
-    dataset = Dataset(h5_path, img_file, train)
+    if train:
+        if os.path.isfile('train.dataset'):
+            dataset = pickle.load(open('train.dataset', 'rb'))
+        else:
+            dataset = Dataset(h5_path, img_file, train)
+            pickle.dump(dataset, open('train.dataset', 'wb'), protocol=4)
+    else:
+        if os.path.isfile('val.dataset'):
+            dataset = pickle.load(open('val.dataset', 'rb'))
+        else:
+            dataset = Dataset(h5_path, img_file, train)
+            pickle.dump(dataset, open('val.dataset', 'wb'))
 
     # data loader for custome dataset
     # please see collate_fn for details

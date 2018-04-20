@@ -75,7 +75,7 @@ def collate_fn(data):
     return img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens
 
 
-def get_loader(h5_path, img_file, train=True, batch_size=100):
+def get_loader(h5_path, img_file, train=True, shuffle=True, batch_size=100):
     # build a custom dataset
     dataset = Dataset(h5_path, img_file, train)
 
@@ -83,11 +83,11 @@ def get_loader(h5_path, img_file, train=True, batch_size=100):
     # please see collate_fn for details
     data_loader = data.DataLoader(dataset=dataset,
                                   batch_size=batch_size,
-                                  shuffle=True,
+                                  shuffle=shuffle,
                                   collate_fn=collate_fn)
 
     return data_loader
 
 if __name__ == '__main__':
-    get_loader('./data/visdial_data.h5', './data/data_img.h5', train=True)
+    get_loader('./data/visdial_data.h5', './data/data_img.h5', train=True, shuffle=True)
 

@@ -81,7 +81,8 @@ class Encoder(nn.Module):
         self.hidden_size = hidden_size
         self.embed = Embedding(vocab_size, input_size)
         self.uencoder = GRUEncoder(input_size, hidden_size)
-        self.fencoder = nn.Bilinear(4096, hidden_size, hidden_size)
+        #self.fencoder = nn.Bilinear(4096, hidden_size, hidden_size)
+        self.fencoder = nn.Linear(4096+hidden_size, hidden_size)
         self.hencoder = GRUEncoder(hidden_size, hidden_size)
         self.score = nn.Bilinear(hidden_size, hidden_size, 2)
 
@@ -93,7 +94,8 @@ class Encoder(nn.Module):
         return src_vec[perm_idx.sort(0, descending=True)[1]]
 
     def encode_feature(self, img, utt):
-        return self.fencoder(img, utt)
+        #return self.fencoder(img, utt)
+        return F.relu(self.fencoder(torch.stack((img, utt), dim=1)))
 
     def forward(self, img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens):
         img_seqs = Variable(torch.from_numpy(np.vstack(img_seqs)))

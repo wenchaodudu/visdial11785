@@ -81,21 +81,22 @@ class Encoder(nn.Module):
         self.hidden_size = hidden_size
         self.embed = Embedding(vocab_size, input_size, word_vectors)
         self.uencoder = GRUEncoder(input_size, hidden_size)
-        #self.fencoder = nn.Bilinear(4096, hidden_size, hidden_size)
+        #self.fencoder = nn.Bilinear(4096, hidden_size, 1)
         self.fencoder = nn.Linear(4096+hidden_size, hidden_size)
         self.hencoder = GRUEncoder(hidden_size, hidden_size)
-        self.score = nn.Bilinear(hidden_size, hidden_size, 2)
+        self.score = nn.Bilinear(hidden_size, hidden_size, 1)
+        self.criterion = nn.CrossEntropyLoss()
 
     def embed_utterance(self, src_seqs, src_lengths):
         src_len, perm_idx = src_lengths.sort(0, descending=True)
         src_sortedseqs = self.embed(src_seqs[perm_idx])
         packed_input = pack_padded_sequence(src_sortedseqs, src_len.cpu().numpy(), batch_first=True)
         src_vec = self.uencoder(packed_input)
-        return src_vec[perm_idx.sort(0, descending=True)[1]]
+        return src_vec[perm_idx.sort(0)[1]]
 
     def encode_feature(self, img, utt):
         #return self.fencoder(img, utt)
-        return F.relu(self.fencoder(torch.stack((img, utt), dim=1)))
+        return F.relu(self.fencoder(torch.cat((img, utt), dim=1)))
 
     def parameters(self):
         return list(self.uencoder.rnn.parameters()) + \
@@ -135,16 +136,27 @@ class Encoder(nn.Module):
         return ans_logits, opt_logits
 
     def loss(self, img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens, num_neg):
-        ans_logits, opt_logits = self.forward(img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens, num_neg)
+        ans_logits, opt_logits = self.forward(img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens, 100)
+        #ans_logits = ans_logits.view(-1, 10)
+        opt_logits = opt_logits.view(-1, 100)
+        ans_idx_seqs = torch.from_numpy(np.concatenate(ans_idx_seqs).astype(np.int32)).long().cuda()
+        '''
         ans_score = F.log_softmax(ans_logits, dim=1)
         opt_score = F.log_softmax(opt_logits, dim=1)
 
         return -(ans_score[:, 1].sum() * num_neg + opt_score[:, 0].sum()) / (ans_score.size(0) * num_neg + opt_score.size(0))
+        '''
+        return self.criterion(opt_logits, Variable(ans_idx_seqs-1))
 
     def evaluate(self, img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens):
         ans_logits, opt_logits = self.forward(img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens, 100)
+        '''
         ans_score = F.softmax(ans_logits, dim=1)
         opt_score = F.softmax(opt_logits, dim=1)
 
         return ans_score.view(-1, 10, 2)[:, :, 1], opt_score.view(-1, 100, 2)[:, :, 1]
+        '''
+        opt_logits = opt_logits.view(-1, 100)
+
+        return opt_logits
         

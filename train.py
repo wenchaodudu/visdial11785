@@ -22,6 +22,7 @@ if __name__ == '__main__':
     parser.add_argument('--model_path', default='', help='folder to output model checkpoints')
     parser.add_argument('--num_neg', default=25 , help='number of negative examples during training')
     parser.add_argument('--use_saved', action='store_true', help='use saved parameters for training')
+    parser.add_argument('--baseline', action='store_true', help='baseline model')
 
     opt = parser.parse_args()
     print(opt)
@@ -41,16 +42,21 @@ if __name__ == '__main__':
     print(found)
     
     if opt.use_saved:
-        net = torch.load(opt.model_path + 'torch_model_0.pt')
-        optimizer = torch.load(opt.model_path + 'optimizer.pt')
+        net = torch.load(opt.model_path + 'torch_model_4.pt')
+        net.embed = Embedding(len(dictionary)+1, 300, word_vectors, trainable=True)
+        #optimizer = torch.load(opt.model_path + 'optimizer.pt')
+        optimizer = torch.optim.Adam(net.parameters(), lr=opt.lr)
     else:
-        net = Encoder(300, 512, 8834, word_vectors)
+        if opt.baseline:
+            net = Baseline(300, 512, 8834, word_vectors)
+        else:
+            net = Encoder(300, 512, 8834, word_vectors)
         optimizer = torch.optim.Adam(net.parameters(), lr=opt.lr)
     if opt.cuda:
         net.cuda()
 
     best_res = 0
-    for epoch in range(opt.training_epoch):
+    for epoch in range(5, opt.training_epoch):
         # Train
         train_loss = 0
         net.train()
@@ -63,8 +69,8 @@ if __name__ == '__main__':
             nn.utils.clip_grad_norm(net.parameters(), 1, 2)
             optimizer.step()
             train_loss += loss.cpu().data[0]
-            if i % 100 == 0:
-                print('Training loss: ', train_loss / min(i+1, 100), time.time() - last)
+            if i % 200 == 0:
+                print('Training loss: ', train_loss / min(i+1, 200), time.time() - last)
                 train_loss = 0
 
         mrr, rat1, rat2, rat3, rat5 = 0, 0, 0, 0, 0

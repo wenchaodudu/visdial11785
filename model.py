@@ -77,7 +77,7 @@ class GRUEncoder(nn.Module):
 
 class Baseline(nn.Module):
     def __init__(self, input_size, hidden_size, vocab_size, word_vectors):
-        super(Encoder, self).__init__()
+        super(Baseline, self).__init__()
         self.hidden_size = hidden_size
         self.embed = Embedding(vocab_size, input_size, word_vectors, trainable=True)
         self.qencoder = GRUEncoder(input_size, hidden_size)

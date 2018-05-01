@@ -16,11 +16,11 @@ if __name__ == '__main__':
     parser.add_argument('--data_file', default='data/visdial_data.h5', help='path to visdial data hdf5 file')
     parser.add_argument('--img_file', default='data/data_img.h5', help='path to image hdf5 file')
     parser.add_argument('--training_epoch', default=20, help='training epoch')
-    parser.add_argument('--batch_size', default=32, help='batch size')
+    parser.add_argument('--batch_size', default=50, help='batch size')
     parser.add_argument('--lr', default=0.001, help='initial learning rate')
     parser.add_argument('--cuda', action='store_true', help='enables cuda')
     parser.add_argument('--model_path', default='', help='folder to output model checkpoints')
-    parser.add_argument('--num_neg', default=25 , help='number of negative examples during training')
+    parser.add_argument('--num_neg', default=100 , help='number of negative examples during training')
     parser.add_argument('--use_saved', action='store_true', help='use saved parameters for training')
     parser.add_argument('--baseline', action='store_true', help='baseline model')
 
@@ -28,11 +28,14 @@ if __name__ == '__main__':
     print(opt)
     
     trainloader = get_loader(opt.data_file, opt.img_file, train=True, batch_size=opt.batch_size)
-    devloader = get_loader(opt.data_file, opt.img_file, train=False, batch_size=20)
+    devloader = get_loader(opt.data_file, opt.img_file, train=False, batch_size=50)
 
+    embedding_dim = 200
+    hidden_size = 200
     dictionary = json.load(open('data/visdial_params.json'))['word2ind']
-    word_vectors = np.random.uniform(low=-0.1, high=0.1, size=(len(dictionary)+1, 300))
-    glove = open('data/glove.6B.300d.txt').readlines()
+    vocab_size = len(dictionary)+1
+    word_vectors = np.random.uniform(low=-0.1, high=0.1, size=(vocab_size, embedding_dim))
+    glove = open('data/glove.6B.200d.txt').readlines()
     found = 0
     for line in glove:
         word, vec = line.split(' ', 1)
@@ -42,10 +45,8 @@ if __name__ == '__main__':
     print(found)
     
     if opt.use_saved:
-        net = torch.load(opt.model_path + 'torch_model_4.pt')
-        net.embed = Embedding(len(dictionary)+1, 300, word_vectors, trainable=True)
-        #optimizer = torch.load(opt.model_path + 'optimizer.pt')
-        optimizer = torch.optim.Adam(net.parameters(), lr=opt.lr)
+        net = torch.load(opt.model_path + 'torch_model_3.pt')
+        optimizer = torch.load(opt.model_path + 'optimizer.pt')
     else:
         if opt.baseline:
             net = Baseline(300, 200, 8834, word_vectors)
@@ -69,8 +70,8 @@ if __name__ == '__main__':
             nn.utils.clip_grad_norm(net.parameters(), 1, 2)
             optimizer.step()
             train_loss += loss.cpu().data[0]
-            if i % 200 == 0:
-                print('Training loss: ', train_loss / min(i+1, 200), time.time() - last)
+            if i % 100 == 0:
+                print('Training loss: ', train_loss / min(i+1, 100), time.time() - last)
                 train_loss = 0
 
         mrr, rat1, rat2, rat3, rat5 = 0, 0, 0, 0, 0
@@ -103,5 +104,5 @@ if __name__ == '__main__':
         print('Learning rate: ', opt.lr)
         if epoch % 20 == 19:
             opt.lr *= 0.5
-        optimizer = torch.optim.Adam(net.parameters(), lr=opt.lr)
+            optimizer = torch.optim.Adam(net.parameters(), lr=opt.lr)
     print('Finished Training')

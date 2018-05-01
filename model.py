@@ -77,12 +77,11 @@ class GRUEncoder(nn.Module):
 
 class Baseline(nn.Module):
     def __init__(self, input_size, hidden_size, vocab_size, word_vectors):
-        super(Encoder, self).__init__()
+        super(Baseline, self).__init__()
         self.hidden_size = hidden_size
-        self.embed = Embedding(vocab_size, input_size, word_vectors, trainable=True)
+        self.embed = Embedding(vocab_size, input_size, word_vectors, trainable=False)
         self.qencoder = GRUEncoder(input_size, hidden_size)
         self.aencoder = GRUEncoder(input_size, hidden_size)
-        self.hencoder = GRUEncoder(hidden_size, hidden_size)
         self.score = nn.Bilinear(4096+hidden_size, hidden_size, 1)
         self.criterion = nn.CrossEntropyLoss()
 
@@ -116,16 +115,80 @@ class Baseline(nn.Module):
         ans_vec = self.embed_utterance(ans_seqs, ans_lens, self.aencoder)
         opt_vec = self.embed_utterance(opt_seqs, opt_lens, self.aencoder)
 
+        feature = torch.cat((img_seqs.repeat(1, 10).view(-1, 4096), ques_vec), dim=1)
+        feature = feature.repeat(1, num_neg).view(-1, 4096+self.hidden_size)
+        logits = self.score(feature, opt_vec)
+
+        return logits
+
+    def loss(self, img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens, num_neg):
+        opt_logits = self.forward(img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens, num_neg)
+        opt_logits = opt_logits.view(-1, num_neg)
+        ans_idx_seqs = torch.from_numpy(np.concatenate(ans_idx_seqs).astype(np.int32)).long().cuda()
+        
+        return self.criterion(opt_logits, Variable(ans_idx_seqs-1))
+
+    def evaluate(self, img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens):
+        opt_logits = self.forward(img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens, 100)
+        opt_logits = opt_logits.view(-1, 100)
+
+        return opt_logits
+ 
+
+class SimpleEncoder(nn.Module):
+    def __init__(self, input_size, hidden_size, vocab_size, word_vectors):
+        super(SimpleEncoder, self).__init__()
+        self.hidden_size = hidden_size
+        self.embed = Embedding(vocab_size, input_size, word_vectors, trainable=False)
+        self.qencoder = nn.GRU(input_size, hidden_size, batch_first=True)
+        self.aencoder = nn.GRU(input_size, hidden_size, batch_first=True)
+        self.score = nn.Bilinear(hidden_size, hidden_size, 1)
+        self.criterion = nn.CrossEntropyLoss()
+
+    def embed_utterance(self, src_seqs, src_lengths, encoder):
+        src_len, perm_idx = src_lengths.sort(0, descending=True)
+        src_sortedseqs = self.embed(Variable(src_seqs[perm_idx]))
+        packed_input = pack_padded_sequence(src_sortedseqs, src_len.cpu().numpy(), batch_first=True)
+        pdb.set_trace()
+        output, hidden = encoder(packed_input)
+        src_vec = pad_packed_sequence(hidden, batch_first=True)
+        return src_vec[perm_idx.sort(0)[1]]
+
+    def forward(self, img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens, num_neg):
+        img_seqs = Variable(torch.from_numpy(np.vstack(img_seqs))).cuda()
+
+        ques_seqs = torch.from_numpy(np.concatenate(ques_seqs).astype(np.int32)).long().cuda()
+        ans_seqs = torch.from_numpy(np.concatenate(ans_seqs).astype(np.int32)).long().cuda()
+        opt_seqs = torch.from_numpy(np.concatenate(opt_seqs).astype(np.int32)).long().cuda()
+        if num_neg < 100:
+            rand_ind = np.random.choice(100, num_neg, False)
+            rand_ind = torch.from_numpy(rand_ind).long().cuda()
+            opt_seqs = opt_seqs[:, rand_ind, :]
+        opt_seqs = opt_seqs.view(-1, opt_seqs.size(2))
+
+        ques_lens = torch.from_numpy(np.concatenate(ques_lens).astype(np.int32)).long().cuda()
+        ans_lens = torch.from_numpy(np.concatenate(ans_lens).astype(np.int32)).long().cuda()
+        opt_lens = torch.from_numpy(np.concatenate(opt_lens).astype(np.int32)).long().cuda()
+        if num_neg < 100:
+            opt_lens = opt_lens[:, rand_ind]
+        opt_lens = opt_lens.view(-1)
+        
+        ques_vec = self.embed_utterance(ques_seqs, ques_lens, self.qencoder)
+        ans_vec = self.embed_utterance(ans_seqs, ans_lens, self.aencoder)
+        opt_vec = self.embed_utterance(opt_seqs, opt_lens, self.aencoder)
+
+        '''
         ques_feat = self.encode_feature(img_seqs.repeat(1, 10).view(-1, 4096), ques_vec)
         ans_feat = self.encode_feature(img_seqs.repeat(1, 10).view(-1, 4096), ans_vec)
         opt_feat = self.encode_feature(img_seqs.repeat(1, 10*num_neg).view(-1, 4096), opt_vec)
         ans_logits = self.score(ques_feat, ans_feat)
         opt_logits = self.score(ques_feat.repeat(1, num_neg).view(-1, self.hidden_size), opt_feat)
+        '''
 
         return ans_logits, opt_logits
 
     def loss(self, img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens, num_neg):
-        ans_logits, opt_logits = self.forward(img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens, 100)
+        ans_logits, opt_logits = self.forward(img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens, num_neg)
         #ans_logits = ans_logits.view(-1, 10)
         opt_logits = opt_logits.view(-1, 100)
         ans_idx_seqs = torch.from_numpy(np.concatenate(ans_idx_seqs).astype(np.int32)).long().cuda()
@@ -149,12 +212,11 @@ class Baseline(nn.Module):
 
         return opt_logits
  
-
-class Encoder(nn.Module):
+class MatchingNetwork(nn.Module):
     def __init__(self, input_size, hidden_size, vocab_size, word_vectors):
-        super(Encoder, self).__init__()
+        super(MatchingNetwork, self).__init__()
         self.hidden_size = hidden_size
-        self.embed = Embedding(vocab_size, input_size, word_vectors, trainable=True)
+        self.embed = Embedding(vocab_size, input_size, word_vectors, trainable=False)
         self.uencoder = GRUEncoder(input_size, hidden_size)
         #self.fencoder = nn.Bilinear(4096, hidden_size, 1)
         self.fencoder = nn.Linear(4096+hidden_size, hidden_size)
@@ -172,13 +234,6 @@ class Encoder(nn.Module):
     def encode_feature(self, img, utt):
         #return self.fencoder(img, utt)
         return F.relu(self.fencoder(torch.cat((img, utt), dim=1)))
-
-    def parameters(self):
-        return list(self.uencoder.rnn.parameters()) + \
-               list(self.fencoder.parameters()) + \
-               list(self.hencoder.rnn.parameters()) + \
-               list(self.score.parameters()) + \
-               list(self.embed.parameters())
 
     def forward(self, img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens, num_neg):
         img_seqs = Variable(torch.from_numpy(np.vstack(img_seqs))).cuda()
@@ -212,7 +267,7 @@ class Encoder(nn.Module):
         return ans_logits, opt_logits
 
     def loss(self, img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens, num_neg):
-        ans_logits, opt_logits = self.forward(img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens, 100)
+        ans_logits, opt_logits = self.forward(img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens, num_neg)
         #ans_logits = ans_logits.view(-1, 10)
         opt_logits = opt_logits.view(-1, 100)
         ans_idx_seqs = torch.from_numpy(np.concatenate(ans_idx_seqs).astype(np.int32)).long().cuda()
@@ -235,4 +290,4 @@ class Encoder(nn.Module):
         opt_logits = opt_logits.view(-1, 100)
 
         return opt_logits
-        
+               

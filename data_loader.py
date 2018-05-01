@@ -6,7 +6,6 @@ import numpy as np
 import pdb
 import os
 import _pickle as pickle
-from progressbar import ProgressBar as Bar
 
 
 class Dataset(data.Dataset):
@@ -40,8 +39,7 @@ class Dataset(data.Dataset):
         self.length = self.captions.shape[0]
         self.options = np.zeros((self.length, 10, 100, 20), dtype=np.int32)
         self.opt_len = np.zeros((self.length, 10, 100), dtype=np.int32)
-        bar = Bar('Processing optioins')
-        for x in bar(range(self.length)):
+        for x in range(self.length):
             for y in range(10):
                 self.options[x, y, :, :] = opt_list[raw_options[x][y]-1]
                 self.opt_len[x, y, :] = raw_opt_len[raw_options[x][y]-1]
@@ -80,17 +78,9 @@ def collate_fn(data):
 def get_loader(h5_path, img_file, train=True, shuffle=True, batch_size=100):
     # build a custom dataset
     if train:
-        if os.path.isfile('train.dataset'):
-            dataset = pickle.load(open('train.dataset', 'rb'))
-        else:
-            dataset = Dataset(h5_path, img_file, train)
-            pickle.dump(dataset, open('train.dataset', 'wb'), protocol=4)
+        dataset = Dataset(h5_path, img_file, train)
     else:
-        if os.path.isfile('val.dataset'):
-            dataset = pickle.load(open('val.dataset', 'rb'))
-        else:
-            dataset = Dataset(h5_path, img_file, train)
-            pickle.dump(dataset, open('val.dataset', 'wb'))
+        dataset = Dataset(h5_path, img_file, train)
 
     # data loader for custome dataset
     # please see collate_fn for details

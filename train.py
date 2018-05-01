@@ -48,9 +48,9 @@ if __name__ == '__main__':
         optimizer = torch.optim.Adam(net.parameters(), lr=opt.lr)
     else:
         if opt.baseline:
-            net = Baseline(300, 512, 8834, word_vectors)
+            net = Baseline(300, 200, 8834, word_vectors)
         else:
-            net = Encoder(300, 512, 8834, word_vectors)
+            net = MatchingNetwork(300, 200, 8834, word_vectors)
         optimizer = torch.optim.Adam(net.parameters(), lr=opt.lr)
     if opt.cuda:
         net.cuda()

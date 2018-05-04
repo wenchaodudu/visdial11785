@@ -49,10 +49,10 @@ if __name__ == '__main__':
         optimizer = torch.load(opt.model_path + 'optimizer.pt')
     else:
         if opt.baseline:
-            net = Baseline(300, 200, 8834, word_vectors)
+            net = Baseline(200, 200, 8834, word_vectors)
         else:
-            net = MatchingNetwork(300, 200, 8834, word_vectors)
-        optimizer = torch.optim.Adam(net.parameters(), lr=opt.lr)
+            net = MatchingNetwork(200, 200, 8834, word_vectors)
+        optimizer = torch.optim.Adam(filter(lambda x: x.requires_grad, net.parameters()), lr=opt.lr)
     if opt.cuda:
         net.cuda()
 

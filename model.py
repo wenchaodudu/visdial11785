@@ -9,6 +9,8 @@ import numpy as np
 import pdb 
 from masked_cel import compute_loss
 
+start_ind = 8834
+end_ind = 8835
 
 class Embedding(nn.Module):
     """ 
@@ -242,7 +244,7 @@ class BaselineAttnDecoder(nn.Module):
         ques_lens = torch.from_numpy(np.concatenate(ques_lens).astype(np.int32)).long().cuda()
         ques_hidden, _ = self.embed_utterance(ques_seqs, ques_lens, True)
         decoder_hidden = self.init_hidden(ques_hidden, img_seqs)
-        decoder_input = self.embed(Variable(torch.zeros((400, 1)).fill_(start_ind).long().cuda()))
+        decoder_input = self.embed(Variable(torch.zeros((batch_size * 10, 1)).fill_(start_ind).long().cuda()))
         decoder_outputs = Variable(torch.FloatTensor(batch_size * 10, self.max_len, self.input_size).cuda())
         length = ques_hidden.size(1)
         for step in range(self.max_len):

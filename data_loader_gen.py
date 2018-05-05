@@ -8,9 +8,8 @@ import os
 import _pickle as pickle
 
 
-start_ind = 0
-end_ind = 8846
-
+start_ind = 8834
+end_ind = 8835
 
 class Dataset(data.Dataset):
     """Custom data.Dataset compatible with data.DataLoader."""
@@ -51,10 +50,10 @@ class Dataset(data.Dataset):
             for y in range(10):
                 self.options[x, y, :, :] = opt_list[raw_options[x][y]-1]
                 self.opt_len[x, y, :] = raw_opt_len[raw_options[x][y]-1]
-                pdb.set_trace()
-                self.answers[x, y] = np.pad(raw_answers[x, y], (1, 1), 'constant')
+                #self.answers[x, y] = np.pad(raw_answers[x, y], (1, 1), 'constant')
+                self.answers[x, y, 1:-1] = raw_answers[x, y]
                 self.answers[x, y, self.ans_len[x, y] + 1] = end_ind
-                self.ans_len[x, y] = self.ans_len[x, y] + 2
+        self.ans_len += 2
 
     def __getitem__(self, index):
         return self.images[index], self.captions[index], self.questions[index], \

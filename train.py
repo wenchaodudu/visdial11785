@@ -49,9 +49,9 @@ if __name__ == '__main__':
         optimizer = torch.load(opt.model_path + 'optimizer.pt')
     else:
         if opt.baseline:
-            net = Baseline(200, 200, 8834, word_vectors)
+            net = BaselineAttnDecoder(embedding_dim, hidden_size, vocab_size, word_vectors)
         else:
-            net = MatchingNetwork(200, 200, 8834, word_vectors)
+            #net = MatchingNetwork(embedding_dim, hidden_size, vocab_size, word_vectors)
         optimizer = torch.optim.Adam(filter(lambda x: x.requires_grad, net.parameters()), lr=opt.lr)
     if opt.cuda:
         net.cuda()
@@ -103,7 +103,7 @@ if __name__ == '__main__':
         torch.save(optimizer, opt.model_path + 'optimizer.pt')
 
         print('Learning rate: ', opt.lr)
-        if epoch % 20 == 19:
+        if epoch % 3 == 2:
             opt.lr *= 0.5
             optimizer = torch.optim.Adam(net.parameters(), lr=opt.lr)
     print('Finished Training')

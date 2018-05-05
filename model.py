@@ -218,26 +218,41 @@ class BaselineAttnDecoder(nn.Module):
         
         return decoder_outputs, ans_seqs, ans_lens
 
-    def generate(self, img_seqs, cap_seqs, ques_seqs, opt_seqs, ques_lens, opt_lens):
+    def generate(self, img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens, num_neg, sampling_rate):
         img_seqs = Variable(torch.from_numpy(np.vstack(img_seqs))).cuda()
         batch_size = img_seqs.size(0)
+        img_seqs = img_seqs.view(batch_size, 16, 256)
+        img_seqs = img_seqs.unsqueeze(1).expand(batch_size, 10, 16, 256).contiguous().view(-1, 16, 256)
 
         ques_seqs = torch.from_numpy(np.concatenate(ques_seqs).astype(np.int32)).long().cuda()
+        ans_seqs = torch.from_numpy(np.concatenate(ans_seqs).astype(np.int32)).long().cuda()
+
         ques_lens = torch.from_numpy(np.concatenate(ques_lens).astype(np.int32)).long().cuda()
+        ans_lens = torch.from_numpy(np.concatenate(ans_lens).astype(np.int32)).long().cuda()
         ques_hidden, _ = self.embed_utterance(ques_seqs, ques_lens, True)
+        ans_embed = self.embed_utterance(ans_seqs, ans_lens, False)
         decoder_hidden = self.init_hidden(ques_hidden, img_seqs)
-        decoder_input = self.embed(Variable(torch.zeros(batch_size).fill_(start_ind).long().cuda()))
+        decoder_input = ans_embed[:, 0].unsqueeze(1)
         decoder_outputs = Variable(torch.FloatTensor(batch_size * 10, self.max_len, self.input_size).cuda())
         length = ques_hidden.size(1)
         for step in range(self.max_len):
-            q_key = self.q_key(ques_hidden)
             a_key = self.a_key(decoder_hidden.squeeze(1))
-            values = self.q_value(ques_hidden)
-            energy = torch.bmm(q_key, a_key.unsqueeze(2)).squeeze(2)
-            mask  = torch.arange(length).long().cuda().repeat(ques_hidden.size(0), 1) < ques_lens.repeat(length, 1).transpose(0, 1)
-            energy[~mask] = -np.inf
-            weights = F.softmax(energy, dim=1).unsqueeze(1)
-            context = torch.bmm(weights, values).squeeze(1)
+
+            q_key = self.q_key(ques_hidden)
+            q_value = self.q_value(ques_hidden)
+            q_energy = torch.bmm(q_key, a_key.unsqueeze(2)).squeeze(2)
+            q_mask  = torch.arange(length).long().repeat(ques_hidden.size(0), 1) < ques_lens.repeat(length, 1).transpose(0, 1)
+            q_energy[~q_mask] = -np.inf
+            q_weights = F.softmax(q_energy, dim=1).unsqueeze(1)
+            q_context = torch.bmm(q_weights, q_value).squeeze(1)
+
+            i_key = self.i_key(img_seqs)
+            i_value = self.i_value(img_seqs)
+            i_energy = torch.bmm(i_key, a_key.unsqueeze(2)).squeeze(2)
+            i_weights = F.softmax(i_energy, dim=1).unsqueeze(1)
+            i_context = torch.bmm(i_weights, i_value).squeeze(1)         
+            
+            context = torch.cat((q_context, i_context), dim=1)
             decoder_output, decoder_hidden = self.decoder(torch.cat((decoder_input, context.unsqueeze(1)), dim=2), decoder_hidden.transpose(0, 1))
             decoder_hidden = decoder_hidden.transpose(0, 1)
             decoder_outputs[:, step, :] = self.out(torch.cat((decoder_output.squeeze(1), context), dim=1))
@@ -255,7 +270,8 @@ class BaselineAttnDecoder(nn.Module):
 
     def evaluate(self, img_seqs, cap_seqs, ques_seqs, opt_seqs, ques_lens, opt_lens):
         opt_logits = self.generate(img_seqs, cap_seqs, ques_seqs, opt_seqs, ques_lens, opt_lens)
-        return opt_logits
+        decoder_outputs = self.word_dist(opt_logits)
+        return decoder_outputs
 
 
 class SimpleEncoder(nn.Module):
@@ -455,4 +471,3 @@ class MatchingNetwork(nn.Module):
         opt_logits = logits.view(-1, 100)
 
         return opt_logits
-               

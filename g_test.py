@@ -1,64 +1,54 @@
-import sys
-import json
 import pdb
-import time
-import numpy as np
 import argparse
-
 import torch
-import torch.nn as nn
-from torch.autograd import Variable
-from torch.nn.utils.rnn import pad_packed_sequence
-from torch.nn.utils.rnn import pack_padded_sequence
+import time
+import json
+import sys
+import numpy as np
+from g_data_loader import *
+from model import *
 
-from data_loader import get_loader
-from model import Encoder
-
-
-def main(config):
-    print(config)
-
-    eval_batch_size = 10
-    dev_loader = get_loader('./data/visdial_data.h5', './data/data_img.h5', train=False, shuffle=False, batch_size=eval_batch_size)
-
-    visdial = torch.load('model.pt')
-    visdial.flatten_parameters()
-    visdial.eval()
-
-    best_rat1 = 0
-    count = 0
-    rat1 = 0
-    rat2 = 0
-    rat3 = 0
-    rat5 = 0
-    mrr = 0
-    for i, data in enumerate(dev_loader):
-        img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens = data
-        prediction = visdial.evaluate(img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens)
-        prediction = prediction.data.cpu().numpy()
-        labels = np.asarray(labels)
-        for x in range(prediction.shape[0] // 10):
-            ranks = prediction[x*10:(x+1)*10].argsort().argsort()
-            rank = ranks[np.where(labels[x*10:(x+1)*10]==1)][0]
-            if rank >= 9:
-                rat1 += 1
-            if rank >= 8:
-                rat2 += 1
-            if rank >= 7:
-                rat3 += 1
-            if rank >= 5:
-                rat5 += 1
-            mrr += 1 / (10 - rank)
-            count += 1
-    print(np.array([mrr, rat1, rat2, rat3, rat5]) / count)
+start_ind = 8834
+end_ind = 8835
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--use_saved', type=bool, default=False)
-    parser.add_argument('--print_every_n_batches', type=int, default=10)
-    parser.add_argument('--kl_weight', type=bool, default=True)
-    parser.add_argument('--lr', type=float, default=0.001)
-    parser.add_argument('--save_path', type=str, default='')
-    parser.add_argument('--start_kl_weight', type=float, default=0)
-    config = parser.parse_args()
-    main(config)
+    
+    parser.add_argument('--data_file', default='data/visdial_data.h5', help='path to visdial data hdf5 file')
+    parser.add_argument('--img_file', default='data/data_img.h5', help='path to image hdf5 file')
+    parser.add_argument('--training_epoch', default=20, help='training epoch')
+    parser.add_argument('--batch_size', default=40, help='batch size')
+    parser.add_argument('--lr', default=0.001, help='initial learning rate')
+    parser.add_argument('--cuda', action='store_true', help='enables cuda')
+    parser.add_argument('--model_path', default='./gen_', help='folder to output model checkpoints')
+    parser.add_argument('--num_neg', default=100 , help='number of negative examples during training')
+    parser.add_argument('--use_saved', action='store_true', help='use saved parameters for training')
+    parser.add_argument('--baseline', action='store_true', help='baseline model')
+
+    opt = parser.parse_args()
+    print(opt)
+    
+    devloader = get_loader(opt.data_file, opt.img_file, train=False, batch_size=20)
+
+    if opt.use_saved:
+        net = torch.load(opt.model_path + 'torch_model.pt')
+    else:
+        raise NotImplementedError
+    if opt.cuda:
+        net.cuda()
+
+    translation = json.load(open('data/visdial_params.json'))['ind2word']
+    net.eval()
+    for i, data in enumerate(devloader):
+        img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, cap_lens, ques_lens, ans_lens, opt_lens = data
+        opt_score = net.evaluate(img_seqs, cap_seqs, ques_seqs, opt_seqs, ques_lens, opt_lens)
+        # batch_size * max_len * input_size
+        text = opt_score[:, 0, :].max(dim=1)[1].data.cpu().numpy()
+        try:
+            eos = np.where(text == end_ind)[0][0]
+        except:
+            eos = len(text)
+        res = [translation[text[i]] for i in range(eos)]
+        res = ''.join(res)
+        print(res)
+    print('Finished Training')

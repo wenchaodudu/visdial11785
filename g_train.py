@@ -82,21 +82,6 @@ if __name__ == '__main__':
         torch.save(net, opt.model_path + 'torch_model_' + str(epoch) + '.pt')
         torch.save(optimizer, opt.model_path + 'optimizer_' + str(epoch) + '.pt')
 
-        translation = json.load(open('data/visdial_params.json'))['ind2word']
-        net.eval()
-        for i, data in enumerate(devloader):
-            img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, cap_lens, ques_lens, ans_lens, opt_lens = data
-            opt_score = net.evaluate(img_seqs, cap_seqs, ques_seqs, opt_seqs, ques_lens, opt_lens)
-            # batch_size * max_len * input_size
-            text = opt_score[:, 0, :].max(dim=1)[1].data.cpu().numpy()
-            try:
-                eos = np.where(text == end_ind)[0][0]
-            except:
-                eos = len(text)
-            res = [translation[text[i]] for i in range(eos)]
-            res = ''.join(res)
-            print(res)
-
         print('Learning rate: ', opt.lr)
         if epoch % 3 == 2:
             opt.lr *= 0.5

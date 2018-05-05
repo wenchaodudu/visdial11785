@@ -6,7 +6,7 @@ import time
 import json
 import sys
 import numpy as np
-from data_loader_gen import *
+from g_data_loader import *
 from model import *
 
 start_ind = 8834
@@ -80,6 +80,7 @@ if __name__ == '__main__':
 
         print('Saving model...')
         torch.save(net, opt.model_path + 'torch_model_' + str(epoch) + '.pt')
+        torch.save(optimizer, opt.model_path + 'optimizer_' + str(epoch) + '.pt')
 
         translation = json.load(open('data/visdial_params.json'))['ind2word']
         net.eval()

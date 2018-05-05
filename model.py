@@ -232,7 +232,7 @@ class BaselineAttnDecoder(nn.Module):
         
         return decoder_outputs, ans_seqs, ans_lens
 
-    def generate(self, img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens, num_neg, sampling_rate):
+    def generate(self, img_seqs, cap_seqs, ques_seqs, opt_seqs, ques_lens):
         img_seqs = Variable(torch.from_numpy(np.vstack(img_seqs))).cuda()
         batch_size = img_seqs.size(0)
         img_seqs = img_seqs.view(batch_size, 16, 256)
@@ -282,8 +282,8 @@ class BaselineAttnDecoder(nn.Module):
         
         return loss
 
-    def evaluate(self, img_seqs, cap_seqs, ques_seqs, opt_seqs, ques_lens, opt_lens):
-        opt_logits = self.generate(img_seqs, cap_seqs, ques_seqs, opt_seqs, ques_lens, opt_lens)
+    def evaluate(self, img_seqs, cap_seqs, ques_seqs, opt_seqs, ques_lens):
+        opt_logits = self.generate(img_seqs, cap_seqs, ques_seqs, opt_seqs, ques_lens)
         decoder_outputs = self.word_dist(opt_logits)
         return decoder_outputs
 

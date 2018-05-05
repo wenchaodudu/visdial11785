@@ -20,7 +20,7 @@ if __name__ == '__main__':
     parser.add_argument('--batch_size', default=40, help='batch size')
     parser.add_argument('--lr', default=0.001, help='initial learning rate')
     parser.add_argument('--cuda', action='store_true', help='enables cuda')
-    parser.add_argument('--model_path', default='./gen_', help='folder to output model checkpoints')
+    parser.add_argument('--model_path', default='', help='folder to output model checkpoints')
     parser.add_argument('--num_neg', default=100 , help='number of negative examples during training')
     parser.add_argument('--use_saved', action='store_true', help='use saved parameters for training')
     parser.add_argument('--baseline', action='store_true', help='baseline model')
@@ -31,7 +31,7 @@ if __name__ == '__main__':
     devloader = get_loader(opt.data_file, opt.img_file, train=False, batch_size=20)
 
     if opt.use_saved:
-        net = torch.load(opt.model_path + 'torch_model.pt')
+        net = torch.load(opt.model_path + 'gen_torch_model.pt')
     else:
         raise NotImplementedError
     if opt.cuda:
@@ -39,9 +39,12 @@ if __name__ == '__main__':
 
     translation = json.load(open('data/visdial_params.json'))['ind2word']
     net.eval()
+    mrr, rat1, rat2, rat3, rat5 = 0, 0, 0, 0, 0
+    count = 0
     for i, data in enumerate(devloader):
-        img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, cap_lens, ques_lens, ans_lens, opt_lens = data
-        opt_score = net.evaluate(img_seqs, cap_seqs, ques_seqs, opt_seqs, ques_lens, opt_lens)
+        img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens = data
+        opt_score = net.evaluate(img_seqs, cap_seqs, ques_seqs, opt_seqs, ques_lens)
+        
         # batch_size * max_len * input_size
         text = opt_score[:, 0, :].max(dim=1)[1].data.cpu().numpy()
         try:
@@ -51,4 +54,17 @@ if __name__ == '__main__':
         res = [translation[text[i]] for i in range(eos)]
         res = ''.join(res)
         print(res)
-    print('Finished Training')
+
+        prediction = opt_score.data.cpu().numpy()
+        ranks = 100 - prediction.argsort(axis=1).argsort(axis=1)
+        truth = np.concatenate(ans_idx_seqs) - 1
+        truth_rank = ranks[np.arange(ranks.shape[0]), truth]
+        rat1 += np.sum(truth_rank <= 1)
+        rat2 += np.sum(truth_rank <= 2)
+        rat3 += np.sum(truth_rank <= 3)
+        rat5 += np.sum(truth_rank <= 5)
+        mrr += np.sum(1 / truth_rank)
+        count += ranks.shape[0]
+
+    results = np.asarray([mrr, rat1, rat2, rat3, rat5]) / count
+    print(results)

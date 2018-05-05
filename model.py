@@ -7,6 +7,7 @@ from torch.optim import Adam
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 import numpy as np
 import pdb 
+from masked_cel import compute_loss
 
 
 class Embedding(nn.Module):
@@ -134,6 +135,103 @@ class Baseline(nn.Module):
 
         return opt_logits
  
+class BaselineAttnDecoder(nn.Module):
+    def __init__(self, input_size, hidden_size, vocab_size, word_vectors):
+        super(BaselineAttnDecoder, self).__init__()
+        self.hidden_size = hidden_size
+        self.input_size = input_size
+        self.vocab_size = vocab_size
+        self.embed = Embedding(vocab_size, input_size, word_vectors, trainable=False)
+        self.qencoder = nn.GRU(input_size, hidden_size)
+        self.decoder = nn.GRU(input_size + hidden_size, hidden_size, batch_first=True)
+        self.key_size = 50
+        self.q_key = nn.Linear(hidden_size, self.key_size)
+        self.q_value = nn.Linear(hidden_size, hidden_size)
+        self.a_key = nn.Linear(hidden_size, self.key_size)
+        self.max_len = 21
+        self.out = nn.Linear(hidden_size * 2, input_size)
+        self.word_dist = nn.Linear(input_size, vocab_size)
+        self.word_dist.weight = self.embed.weight
+
+    def embed_utterance(self, src_seqs, src_lengths, get_hidden):
+        src_len, perm_idx = src_lengths.sort(0, descending=True)
+        src_sortedseqs = self.embed(Variable(src_seqs[perm_idx]))
+        rev_idx = perm_idx.sort(0)[1]
+        if get_hidden:
+            packed_input = pack_padded_sequence(src_sortedseqs, src_len.cpu().numpy(), batch_first=True)
+            src_output, _ = self.qencoder(packed_input)
+            src_hidden, _ = pad_packed_sequence(src_output, batch_first=True)
+            #src_hidden = self.pad_seq(src_hidden)
+        #src_sortedseqs = self.pad_seq(src_sortedseqs)
+            return src_hidden[rev_idx], src_sortedseqs[rev_idx]
+        else:
+            return src_sortedseqs[rev_idx]
+
+    def init_hidden(self, ques_hidden, img_seqs):
+        return Variable(torch.zeros(ques_hidden.size(0), 1, self.hidden_size).float().cuda())
+
+    def forward(self, img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens, num_neg, sampling_rate):
+        img_seqs = Variable(torch.from_numpy(np.vstack(img_seqs))).cuda()
+        batch_size = img_seqs.size(0)
+
+        ques_seqs = torch.from_numpy(np.concatenate(ques_seqs).astype(np.int32)).long().cuda()
+        ans_seqs = torch.from_numpy(np.concatenate(ans_seqs).astype(np.int32)).long().cuda()
+        '''
+        opt_seqs = torch.from_numpy(np.concatenate(opt_seqs).astype(np.int32)).long().cuda()
+        if num_neg < 100:
+            rand_ind = np.random.choice(100, num_neg, False)
+            rand_ind = torch.from_numpy(rand_ind).long().cuda()
+            opt_seqs = opt_seqs[:, rand_ind, :]
+        opt_seqs = opt_seqs.view(-1, opt_seqs.size(2))
+        '''
+
+        ques_lens = torch.from_numpy(np.concatenate(ques_lens).astype(np.int32)).long().cuda()
+        ans_lens = torch.from_numpy(np.concatenate(ans_lens).astype(np.int32)).long().cuda()
+        '''
+        opt_lens = torch.from_numpy(np.concatenate(opt_lens).astype(np.int32)).long().cuda()
+        if num_neg < 100:
+            opt_lens = opt_lens[:, rand_ind]
+        opt_lens = opt_lens.view(-1)
+        '''
+        ques_hidden, _ = self.embed_utterance(ques_seqs, ques_lens, True)
+        ans_embed = self.embed_utterance(ques_seqs, ques_lens, False)
+        decoder_hidden = self.init_hidden(ques_hidden, img_seqs)
+        decoder_input = ans_embed[:, 0].unsqueeze(1)
+        decoder_outputs = Variable(torch.FloatTensor(batch_size * 10, self.max_len, self.input_size).cuda())
+        length = ques_hidden.size(1)
+        for step in range(self.max_len):
+            q_key = self.q_key(ques_hidden)
+            a_key = self.a_key(decoder_hidden.squeeze(1))
+            values = self.q_value(ques_hidden)
+            energy = torch.bmm(q_key, a_key.unsqueeze(2)).squeeze(2)
+            mask  = torch.arange(length).long().cuda().repeat(ques_hidden.size(0), 1) < ques_lens.repeat(length, 1).transpose(0, 1)
+            energy[~mask] = -np.inf
+            weights = F.softmax(energy, dim=1).unsqueeze(1)
+            context = torch.bmm(weights, values).squeeze(1)
+            decoder_output, decoder_hidden = self.decoder(torch.cat((decoder_input, context.unsqueeze(1)), dim=2), decoder_hidden.transpose(0, 1))
+            decoder_hidden = decoder_hidden.transpose(0, 1)
+            decoder_outputs[:, step, :] = self.out(torch.cat((decoder_output.squeeze(1), context), dim=1))
+            if np.random.uniform() < sampling_rate and step < self.max_len - 2:
+                decoder_input = ans_embed[:, step+1].unsqueeze(1)
+            else:
+                words = self.word_dist(decoder_outputs[:, step, :]).max(dim=1)[1]
+                decoder_input = self.embed(words).unsqueeze(1)
+        
+        return decoder_outputs, ans_seqs, ans_lens
+
+    def loss(self, img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens, num_neg, sampling_rate):
+        decoder_outputs, ans_seqs, ans_lens = self.forward(img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens, num_neg, sampling_rate)
+        decoder_outputs = self.word_dist(decoder_outputs)
+        loss = compute_loss(decoder_outputs, Variable(ans_seqs[:, 1:]), Variable(ans_lens) - 1)
+        
+        return loss
+
+    def evaluate(self, img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens):
+        opt_logits = self.forward(img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens, 100)
+        opt_logits = opt_logits.view(-1, 100)
+
+        return opt_logits
+
 
 class SimpleEncoder(nn.Module):
     def __init__(self, input_size, hidden_size, vocab_size, word_vectors):
@@ -218,7 +316,9 @@ class MatchingNetwork(nn.Module):
         self.hidden_size = hidden_size
         self.embedding_dim = input_size
         self.embed = Embedding(vocab_size, input_size, word_vectors, trainable=False)
-        self.uencoder = nn.GRU(input_size, hidden_size)
+        self.qencoder = nn.GRU(input_size, hidden_size)
+        self.aencoder = nn.GRU(input_size, hidden_size)
+        self.aiencoder = nn.GRU(input_size, hidden_size)
         #self.fencoder = nn.Bilinear(4096, hidden_size, 1)
         self.hencoder = GRUEncoder(hidden_size, hidden_size)
         self.score = nn.Bilinear(hidden_size, hidden_size, 1)
@@ -239,11 +339,11 @@ class MatchingNetwork(nn.Module):
             seqs = torch.cat((seqs, Variable(torch.zeros(size, 20 - length, dim).float().cuda())), dim=1)
         return seqs
 
-    def embed_utterance(self, src_seqs, src_lengths):
+    def embed_utterance(self, src_seqs, src_lengths, encoder):
         src_len, perm_idx = src_lengths.sort(0, descending=True)
         src_sortedseqs = self.embed(Variable(src_seqs[perm_idx]))
         packed_input = pack_padded_sequence(src_sortedseqs, src_len.cpu().numpy(), batch_first=True)
-        src_output, _ = self.uencoder(packed_input)
+        src_output, _ = encoder(packed_input)
         src_hidden, _ = pad_packed_sequence(src_output, batch_first=True)
         src_sortedseqs = self.pad_seq(src_sortedseqs)
         src_hidden = self.pad_seq(src_hidden)
@@ -274,9 +374,10 @@ class MatchingNetwork(nn.Module):
             opt_lens = opt_lens[:, rand_ind]
         opt_lens = opt_lens.view(-1)
         
-        ques_hidden, ques_embed = self.embed_utterance(ques_seqs, ques_lens)
-        ans_hidden, ans_embed = self.embed_utterance(ans_seqs, ans_lens)
-        opt_hidden, opt_embed = self.embed_utterance(opt_seqs, opt_lens)
+        ques_hidden, ques_embed = self.embed_utterance(ques_seqs, ques_lens, self.qencoder)
+        ans_hidden, ans_embed = self.embed_utterance(ans_seqs, ans_lens, self.aencoder)
+        opt_hidden, opt_embed = self.embed_utterance(opt_seqs, opt_lens, self.aencoder)
+        img_opt_hidden, _ = self.embed_utterance(opt_seqs, opt_lens, self.aiencoder)
 
         # question answer matching
         ques_hidden = ques_hidden.unsqueeze(1).expand(batch_size * 10, num_neg, 20, self.hidden_size).contiguous().view(-1, 20, self.hidden_size)
@@ -294,7 +395,7 @@ class MatchingNetwork(nn.Module):
         iw_sim = self.iw_M(img_seqs)
         iw_sim = torch.bmm(iw_sim, opt_embed.transpose(1, 2))
         iu_sim = self.iu_M(img_seqs)
-        iu_sim = torch.bmm(iu_sim, opt_hidden.transpose(1, 2))
+        iu_sim = torch.bmm(iu_sim, img_opt_hidden.transpose(1, 2))
         iw_conv_input = torch.cat((iw_sim.unsqueeze(1), iu_sim.unsqueeze(1)), dim=1)
         iw_conv_output = F.relu(self.iw_conv(iw_conv_input))
         iw_conv_output = self.iw_pool(iw_conv_output)
@@ -325,7 +426,7 @@ class MatchingNetwork(nn.Module):
 
         return ans_score.view(-1, 10, 2)[:, :, 1], opt_score.view(-1, 100, 2)[:, :, 1]
         '''
-        opt_logits = opt_logits.view(-1, 100)
+        opt_logits = logits.view(-1, 100)
 
         return opt_logits
                

@@ -239,14 +239,10 @@ class BaselineAttnDecoder(nn.Module):
         img_seqs = img_seqs.unsqueeze(1).expand(batch_size, 10, 16, 256).contiguous().view(-1, 16, 256)
 
         ques_seqs = torch.from_numpy(np.concatenate(ques_seqs).astype(np.int32)).long().cuda()
-        ans_seqs = torch.from_numpy(np.concatenate(ans_seqs).astype(np.int32)).long().cuda()
-
         ques_lens = torch.from_numpy(np.concatenate(ques_lens).astype(np.int32)).long().cuda()
-        ans_lens = torch.from_numpy(np.concatenate(ans_lens).astype(np.int32)).long().cuda()
         ques_hidden, _ = self.embed_utterance(ques_seqs, ques_lens, True)
-        ans_embed = self.embed_utterance(ans_seqs, ans_lens, False)
         decoder_hidden = self.init_hidden(ques_hidden, img_seqs)
-        decoder_input = ans_embed[:, 0].unsqueeze(1)
+        decoder_input = self.embed(Variable(torch.zeros((400, 1)).fill_(start_ind).long().cuda()))
         decoder_outputs = Variable(torch.FloatTensor(batch_size * 10, self.max_len, self.input_size).cuda())
         length = ques_hidden.size(1)
         for step in range(self.max_len):

@@ -9,6 +9,8 @@ import numpy as np
 from data_loader_gen import *
 from model import *
 
+start_ind = 8834
+end_ind = 8835
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -50,9 +52,9 @@ if __name__ == '__main__':
         optimizer = torch.load(opt.model_path + 'optimizer.pt')
     else:
         if opt.baseline:
-            net = BaselineAttnDecoder(200, 200, vocab_size, word_vectors)
+            net = BaselineAttnDecoder(embedding_dim, hidden_size, vocab_size, word_vectors)
         else:
-            #net = MatchingNetwork(200, 200, 8834, word_vectors)
+            #net = MatchingNetwork(embedding_dim, hidden_size, vocab_size, word_vectors)
             raise NotImplementedError
         optimizer = torch.optim.Adam(filter(lambda x: x.requires_grad, net.parameters()), lr=opt.lr)
     if opt.cuda:
@@ -79,32 +81,23 @@ if __name__ == '__main__':
         print('Saving model...')
         torch.save(net, opt.model_path + 'torch_model_' + str(epoch) + '.pt')
 
-        mrr, rat1, rat2, rat3, rat5 = 0, 0, 0, 0, 0
-        count = 0
+        translation = json.load(open('data/visdial_params.json'))['ind2word']
+        net.eval()
         for i, data in enumerate(devloader):
             img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, cap_lens, ques_lens, ans_lens, opt_lens = data
-            #ans_score, opt_score = net.evaluate(img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens)
-            opt_score = net.evaluate(img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens)
-            prediction = opt_score.data.cpu().numpy()
-            ranks = 100 - prediction.argsort(axis=1).argsort(axis=1)
-            truth = np.concatenate(ans_idx_seqs) - 1
-            truth_rank = ranks[np.arange(ranks.shape[0]), truth]
-            rat1 += np.sum(truth_rank <= 1)
-            rat2 += np.sum(truth_rank <= 2)
-            rat3 += np.sum(truth_rank <= 3)
-            rat5 += np.sum(truth_rank <= 5)
-            mrr += np.sum(1 / truth_rank)
-            count += ranks.shape[0]
-
-        results = np.asarray([mrr, rat1, rat2, rat3, rat5]) / count
-        print(results)
-        if results[0] > best_res:
-            best_res = results[0]
-            torch.save(net, opt.model_path + 'torch_model_best.pt')
-        torch.save(optimizer, opt.model_path + 'optimizer.pt')
+            opt_score = net.evaluate(img_seqs, cap_seqs, ques_seqs, opt_seqs, ques_lens, opt_lens)
+            # batch_size * max_len * input_size
+            text = opt_score[:, 0, :].max(dim=1)[1].data.cpu().numpy()
+            try:
+                eos = np.where(text == end_ind)[0][0]
+            except:
+                eos = len(text)
+            res = [translation[text[i]] for i in range(eos)]
+            res = ''.join(res)
+            print(res)
 
         print('Learning rate: ', opt.lr)
-        if epoch % 20 == 19:
+        if epoch % 3 == 2:
             opt.lr *= 0.5
             optimizer = torch.optim.Adam(net.parameters(), lr=opt.lr)
     print('Finished Training')

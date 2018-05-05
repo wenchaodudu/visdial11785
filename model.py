@@ -194,7 +194,7 @@ class BaselineAttnDecoder(nn.Module):
         opt_lens = opt_lens.view(-1)
         '''
         ques_hidden, _ = self.embed_utterance(ques_seqs, ques_lens, True)
-        ans_embed = self.embed_utterance(ques_seqs, ques_lens, False)
+        ans_embed = self.embed_utterance(ans_seqs, ans_lens, False)
         decoder_hidden = self.init_hidden(ques_hidden, img_seqs)
         decoder_input = ans_embed[:, 0].unsqueeze(1)
         decoder_outputs = Variable(torch.FloatTensor(batch_size * 10, self.max_len, self.input_size).cuda())

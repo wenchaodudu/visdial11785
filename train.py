@@ -16,7 +16,7 @@ if __name__ == '__main__':
     parser.add_argument('--data_file', default='data/visdial_data.h5', help='path to visdial data hdf5 file')
     parser.add_argument('--img_file', default='data/data_img.h5', help='path to image hdf5 file')
     parser.add_argument('--training_epoch', default=20, help='training epoch')
-    parser.add_argument('--batch_size', default=50, help='batch size')
+    parser.add_argument('--batch_size', default=30, help='batch size')
     parser.add_argument('--lr', default=0.001, help='initial learning rate')
     parser.add_argument('--cuda', action='store_true', help='enables cuda')
     parser.add_argument('--model_path', default='', help='folder to output model checkpoints')
@@ -28,7 +28,7 @@ if __name__ == '__main__':
     print(opt)
     
     trainloader = get_loader(opt.data_file, opt.img_file, train=True, batch_size=opt.batch_size)
-    devloader = get_loader(opt.data_file, opt.img_file, train=False, batch_size=50)
+    devloader = get_loader(opt.data_file, opt.img_file, train=False, batch_size=10)
 
     embedding_dim = 200
     hidden_size = 200
@@ -45,7 +45,7 @@ if __name__ == '__main__':
     print(found)
     
     if opt.use_saved:
-        net = torch.load(opt.model_path + 'torch_model_3.pt')
+        net = torch.load(opt.model_path + 'torch_model_0.pt')
         optimizer = torch.load(opt.model_path + 'optimizer.pt')
     else:
         if opt.baseline:
@@ -57,22 +57,26 @@ if __name__ == '__main__':
         net.cuda()
 
     best_res = 0
-    for epoch in range(5, opt.training_epoch):
+    for epoch in range(0, opt.training_epoch):
         # Train
-        train_loss = 0
-        net.train()
-        last = time.time()
-        for i, data in enumerate(trainloader):
-            img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens = data
-            optimizer.zero_grad()
-            loss = net.loss(img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens, opt.num_neg)
-            loss.backward()
-            nn.utils.clip_grad_norm(net.parameters(), 1, 2)
-            optimizer.step()
-            train_loss += loss.cpu().data[0]
-            if i % 100 == 0:
-                print('Training loss: ', train_loss / min(i+1, 100), time.time() - last)
-                train_loss = 0
+        if epoch:
+            train_loss = 0
+            net.train()
+            last = time.time()
+            for i, data in enumerate(trainloader):
+                img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens = data
+                optimizer.zero_grad()
+                loss = net.loss(img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens, opt.num_neg)
+                loss.backward()
+                #nn.utils.clip_grad_norm(net.parameters(), 1, 2)
+                optimizer.step()
+                train_loss += loss.cpu().data[0]
+                if i % 300 == 0:
+                    print('Training loss: ', train_loss / min(i+1, 300), time.time() - last)
+                    train_loss = 0
+
+            print('Saving model...')
+            torch.save(net, opt.model_path + 'torch_model_' + str(epoch) + '.pt')
 
         mrr, rat1, rat2, rat3, rat5 = 0, 0, 0, 0, 0
         count = 0
@@ -97,9 +101,6 @@ if __name__ == '__main__':
             best_res = results[0]
             torch.save(net, opt.model_path + 'torch_model_best.pt')
         torch.save(optimizer, opt.model_path + 'optimizer.pt')
-
-        print('Saving model...')
-        torch.save(net, opt.model_path + 'torch_model_' + str(epoch) + '.pt')
 
         print('Learning rate: ', opt.lr)
         if epoch % 20 == 19:

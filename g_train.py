@@ -54,8 +54,7 @@ if __name__ == '__main__':
         if opt.baseline:
             net = BaselineAttnDecoder(embedding_dim, hidden_size, vocab_size, word_vectors)
         else:
-            #net = MatchingNetwork(embedding_dim, hidden_size, vocab_size, word_vectors)
-            raise NotImplementedError
+            net = AttnDecoder(embedding_dim, hidden_size, vocab_size, word_vectors)
         optimizer = torch.optim.Adam(filter(lambda x: x.requires_grad, net.parameters()), lr=opt.lr)
     if opt.cuda:
         net.cuda()

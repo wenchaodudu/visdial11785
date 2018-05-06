@@ -17,7 +17,7 @@ if __name__ == '__main__':
     parser.add_argument('--data_file', default='data/visdial_data.h5', help='path to visdial data hdf5 file')
     parser.add_argument('--img_file', default='data/data_img.h5', help='path to image hdf5 file')
     parser.add_argument('--training_epoch', default=20, help='training epoch')
-    parser.add_argument('--batch_size', default=40, help='batch size')
+    parser.add_argument('--batch_size', default=1, help='batch size')
     parser.add_argument('--lr', default=0.001, help='initial learning rate')
     parser.add_argument('--cuda', action='store_true', help='enables cuda')
     parser.add_argument('--model_path', default='', help='folder to output model checkpoints')
@@ -31,31 +31,29 @@ if __name__ == '__main__':
     devloader = get_loader(opt.data_file, opt.img_file, train=False, batch_size=20)
 
     if opt.use_saved:
-        net = torch.load(opt.model_path + 'gen_torch_model.pt')
+        net = torch.load(opt.model_path + 'gen_torch_model.pt', map_location=lambda storage, loc: storage)
     else:
         raise NotImplementedError
     if opt.cuda:
         net.cuda()
 
     translation = json.load(open('data/visdial_params.json'))['ind2word']
+    translation = np.asarray([translation[str(x)] for x in range(1, 8846)])
     net.eval()
     mrr, rat1, rat2, rat3, rat5 = 0, 0, 0, 0, 0
     count = 0
     for i, data in enumerate(devloader):
-        img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens = data
-        opt_score = net.evaluate(img_seqs, cap_seqs, ques_seqs, opt_seqs, ques_lens)
-        
-        # batch_size * max_len * input_size
-        text = opt_score[:, 0, :].max(dim=1)[1].data.cpu().numpy()
-        try:
-            eos = np.where(text == end_ind)[0][0]
-        except:
-            eos = len(text)
-        res = [translation[text[i]] for i in range(eos)]
-        res = ''.join(res)
-        print(res)
+        img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, cap_lens, ques_lens, ans_lens, opt_lens = data
+        output, opt_score = net.evaluate(img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens, opt.num_neg, 0.8)
+        text = output.max(2)[1].data.cpu().numpy()
+        eos = np.where(text[0] == end_ind)
+        if len(eos[0]):
+            texts = text[0, :eos[0][0]]
+        texts = ' '.join(translation[texts].tolist())
+        print(texts)
 
         prediction = opt_score.data.cpu().numpy()
+        pdb.set_trace()
         ranks = 100 - prediction.argsort(axis=1).argsort(axis=1)
         truth = np.concatenate(ans_idx_seqs) - 1
         truth_rank = ranks[np.arange(ranks.shape[0]), truth]

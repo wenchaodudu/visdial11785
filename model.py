@@ -7,7 +7,7 @@ from torch.optim import Adam
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 import numpy as np
 import pdb 
-from masked_cel import compute_loss
+from masked_cel import compute_loss, compute_dev_loss
 
 start_ind = 8834
 end_ind = 8835
@@ -165,8 +165,6 @@ class BaselineAttnDecoder(nn.Module):
             packed_input = pack_padded_sequence(src_sortedseqs, src_len.cpu().numpy(), batch_first=True)
             src_output, _ = self.qencoder(packed_input)
             src_hidden, _ = pad_packed_sequence(src_output, batch_first=True)
-            #src_hidden = self.pad_seq(src_hidden)
-        #src_sortedseqs = self.pad_seq(src_sortedseqs)
             return src_hidden[rev_idx], src_sortedseqs[rev_idx]
         else:
             return src_sortedseqs[rev_idx]
@@ -182,23 +180,10 @@ class BaselineAttnDecoder(nn.Module):
 
         ques_seqs = torch.from_numpy(np.concatenate(ques_seqs).astype(np.int32)).long().cuda()
         ans_seqs = torch.from_numpy(np.concatenate(ans_seqs).astype(np.int32)).long().cuda()
-        '''
-        opt_seqs = torch.from_numpy(np.concatenate(opt_seqs).astype(np.int32)).long().cuda()
-        if num_neg < 100:
-            rand_ind = np.random.choice(100, num_neg, False)
-            rand_ind = torch.from_numpy(rand_ind).long().cuda()
-            opt_seqs = opt_seqs[:, rand_ind, :]
-        opt_seqs = opt_seqs.view(-1, opt_seqs.size(2))
-        '''
 
         ques_lens = torch.from_numpy(np.concatenate(ques_lens).astype(np.int32)).long().cuda()
         ans_lens = torch.from_numpy(np.concatenate(ans_lens).astype(np.int32)).long().cuda()
-        '''
-        opt_lens = torch.from_numpy(np.concatenate(opt_lens).astype(np.int32)).long().cuda()
-        if num_neg < 100:
-            opt_lens = opt_lens[:, rand_ind]
-        opt_lens = opt_lens.view(-1)
-        '''
+
         ques_hidden, _ = self.embed_utterance(ques_seqs, ques_lens, True)
         ans_embed = self.embed_utterance(ans_seqs, ans_lens, False)
         decoder_hidden = self.init_hidden(ques_hidden, img_seqs)
@@ -234,14 +219,16 @@ class BaselineAttnDecoder(nn.Module):
         
         return decoder_outputs, ans_seqs, ans_lens
 
-    def generate(self, img_seqs, cap_seqs, ques_seqs, opt_seqs, ques_lens):
+    def generate(self, img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens, num_neg, sampling_rate):
         img_seqs = Variable(torch.from_numpy(np.vstack(img_seqs))).cuda()
         batch_size = img_seqs.size(0)
         img_seqs = img_seqs.view(batch_size, 16, 256)
         img_seqs = img_seqs.unsqueeze(1).expand(batch_size, 10, 16, 256).contiguous().view(-1, 16, 256)
 
         ques_seqs = torch.from_numpy(np.concatenate(ques_seqs).astype(np.int32)).long().cuda()
+        ans_seqs = torch.from_numpy(np.concatenate(ans_seqs).astype(np.int32)).long().cuda()
         ques_lens = torch.from_numpy(np.concatenate(ques_lens).astype(np.int32)).long().cuda()
+        ans_lens = torch.from_numpy(np.concatenate(ans_lens).astype(np.int32)).long().cuda()
         ques_hidden, _ = self.embed_utterance(ques_seqs, ques_lens, True)
         decoder_hidden = self.init_hidden(ques_hidden, img_seqs)
         decoder_input = self.embed(Variable(torch.zeros((batch_size * 10, 1)).fill_(start_ind).long().cuda()))
@@ -271,7 +258,7 @@ class BaselineAttnDecoder(nn.Module):
             words = self.word_dist(decoder_outputs[:, step, :]).max(dim=1)[1]
             decoder_input = self.embed(words).unsqueeze(1)
         
-        return decoder_outputs
+        return decoder_outputs, ans_seqs, ans_lens
 
     def loss(self, img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens, num_neg, sampling_rate):
         decoder_outputs, ans_seqs, ans_lens = self.forward(img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens, num_neg, sampling_rate)
@@ -280,10 +267,12 @@ class BaselineAttnDecoder(nn.Module):
         
         return loss
 
-    def evaluate(self, img_seqs, cap_seqs, ques_seqs, opt_seqs, ques_lens):
-        opt_logits = self.generate(img_seqs, cap_seqs, ques_seqs, opt_seqs, ques_lens)
+    def evaluate(self, img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens, num_neg, sampling_rate):
+        decoder_outputs, ans_seqs, ans_lens = self.generate(img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens, num_neg, sampling_rate)
         decoder_outputs = self.word_dist(opt_logits)
-        return decoder_outputs
+        loss = compute_loss(decoder_outputs, Variable(ans_seqs[:, 1:]), Variable(ans_lens) - 1)
+
+        return decoder_outputs, loss
 
 
 class SimpleEncoder(nn.Module):

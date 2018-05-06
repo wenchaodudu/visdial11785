@@ -48,7 +48,7 @@ if __name__ == '__main__':
     print(found)
     
     if opt.use_saved:
-        net = torch.load(opt.model_path + 'torch_model_0.pt')
+        net = torch.load(opt.model_path + 'torch_model_best.pt')
         optimizer = torch.load(opt.model_path + 'optimizer.pt')
     else:
         if opt.baseline:
@@ -69,7 +69,7 @@ if __name__ == '__main__':
         for i, data in enumerate(trainloader):
             img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, cap_lens, ques_lens, ans_lens, opt_lens = data
             optimizer.zero_grad()
-            loss = net.loss(img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens, opt.num_neg, 0.8)
+            loss = net.loss(img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens, opt.num_neg, 0.9)
             loss.backward()
             #nn.utils.clip_grad_norm(net.parameters(), 1, 2)
             optimizer.step()

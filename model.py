@@ -146,7 +146,7 @@ class BaselineAttnDecoder(nn.Module):
         self.embed = Embedding(vocab_size, input_size, word_vectors, trainable=False)
         self.qencoder = nn.GRU(input_size, hidden_size)
         self.decoder = nn.GRU(input_size + hidden_size * 2, hidden_size, batch_first=True)
-        self.key_size = 50
+        self.key_size = 100
         self.q_key = nn.Linear(hidden_size, self.key_size)
         self.q_value = nn.Linear(hidden_size, hidden_size)
         self.i_key = nn.Linear(256, self.key_size)
@@ -155,7 +155,8 @@ class BaselineAttnDecoder(nn.Module):
         self.max_len = 21
         self.out = nn.Linear(hidden_size * 3, input_size)
         self.word_dist = nn.Linear(input_size, vocab_size)
-        self.word_dist.weight = self.embed.weight
+        self.init_hidden1 = nn.Linear(hidden_size, hidden_size // 2)
+        self.init_hidden2 = nn.Linear(4096, hidden_size // 2)
 
     def embed_utterance(self, src_seqs, src_lengths, get_hidden):
         src_len, perm_idx = src_lengths.sort(0, descending=True)
@@ -169,18 +170,23 @@ class BaselineAttnDecoder(nn.Module):
         else:
             return src_sortedseqs[rev_idx]
 
-    def init_hidden(self, ques_hidden, img_seqs):
-        return Variable(torch.zeros(ques_hidden.size(0), 1, self.hidden_size).float().cuda())
+    def init_hidden(self, ques_hidden, ques_lens, img_seqs):
+        part1 = self.init_hidden1(ques_hidden[torch.arange(ques_hidden.size(0)).long().cuda(), ques_lens - 1, :])
+        part2 = self.init_hidden2(img_seqs)
+        return torch.cat((part1, part2), dim=1).unsqueeze(1)
+        #return Variable(torch.zeros(ques_hidden.size(0), 1, self.hidden_size).float().cuda())
 
     def forward(self, img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens, num_neg, sampling_rate, train=True):
         img_seqs = Variable(torch.from_numpy(np.vstack(img_seqs))).cuda()
         batch_size = img_seqs.size(0)
-        img_seqs = img_seqs.view(batch_size, 16, 256)
-        img_seqs = img_seqs.unsqueeze(1).expand(batch_size, 10, 16, 256).contiguous().view(-1, 16, 256)
 
         ques_seqs = torch.from_numpy(np.concatenate(ques_seqs).astype(np.int32)).long().cuda()
         ques_lens = torch.from_numpy(np.concatenate(ques_lens).astype(np.int32)).long().cuda()
         ques_hidden, _ = self.embed_utterance(ques_seqs, ques_lens, True)
+        img_seqs = img_seqs.unsqueeze(1).expand(batch_size, 10, 4096).contiguous().view(-1, 4096)
+        decoder_hidden = self.init_hidden(ques_hidden, ques_lens, img_seqs)
+        img_seqs = img_seqs.view(batch_size * 10, 16, 256)
+
         length = ques_hidden.size(1)
         ans_seqs = torch.from_numpy(np.concatenate(ans_seqs).astype(np.int32)).long().cuda()
         ans_lens = torch.from_numpy(np.concatenate(ans_lens).astype(np.int32)).long().cuda()
@@ -197,7 +203,6 @@ class BaselineAttnDecoder(nn.Module):
             img_seqs = img_seqs.unsqueeze(1).expand(batch_size * 10, 100, 16, 256).contiguous().view(-1, 16, 256)
             ques_hidden = ques_hidden.unsqueeze(1).expand(batch_size * 10, 100, length, self.hidden_size).contiguous().view(-1, length, self.hidden_size)
 
-        decoder_hidden = self.init_hidden(ques_hidden, img_seqs)
         decoder_input = ans_embed[:, 0].unsqueeze(1)
         for step in range(self.max_len):
             a_key = self.a_key(decoder_hidden.squeeze(1))
@@ -232,6 +237,7 @@ class BaselineAttnDecoder(nn.Module):
         return decoder_outputs, ans_seqs, ans_lens
 
     def generate(self, img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens):
+        '''
         img_seqs = Variable(torch.from_numpy(np.vstack(img_seqs))).cuda()
         batch_size = img_seqs.size(0)
         img_seqs = img_seqs.view(batch_size, 16, 256)
@@ -270,6 +276,10 @@ class BaselineAttnDecoder(nn.Module):
             words = self.word_dist(decoder_outputs[:, step, :]).max(dim=1)[1]
             decoder_input = self.embed(words).unsqueeze(1)
         
+        decoder_outputs = self.word_dist(decoder_outputs)
+        return decoder_outputs
+        '''
+        decoder_outputs, _ , _ = self.forward(img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens, 100, 0, False)
         decoder_outputs = self.word_dist(decoder_outputs)
         return decoder_outputs
 

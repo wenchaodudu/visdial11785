@@ -11,8 +11,8 @@ from torch.autograd import Variable
 from torch.nn.utils.rnn import pad_packed_sequence
 from torch.nn.utils.rnn import pack_padded_sequence
 
-from data_loader import get_loader
-from model import Encoder
+from data_loader import *
+from model import *
 
 
 def main(config):

@@ -237,7 +237,10 @@ class BaselineAttnDecoder(nn.Module):
                 words = self.word_dist(decoder_outputs[:, step, :]).max(dim=1)[1]
                 decoder_input = self.embed(words).unsqueeze(1)
         
-        return decoder_outputs, ans_seqs, ans_lens
+        if train:
+            return decoder_outputs, ans_seqs, ans_lens
+        else:
+            return decoder_outputs, opt_seqs, opt_lens
 
     def generate(self, img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens):
         '''
@@ -295,12 +298,14 @@ class BaselineAttnDecoder(nn.Module):
 
     def evaluate(self, img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens):
         decoder_outputs, ans_seqs, ans_lens = self.forward(img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens, 100, 1, False)
-        decoder_outputs = self.word_dist(decoder_outputs)
+        decoder_outputs = self.word_dist(decoder_outputs[:, :20, :])
         length = ans_seqs.size(1)
         batch_size = len(img_seqs)
+        '''
         ans_seqs = ans_seqs.unsqueeze(1).expand(batch_size * 10, 100, length).contiguous().view(-1, length)
         ans_lens = ans_lens.unsqueeze(1).expand(batch_size * 10, 100).contiguous().view(-1)
-        loss = compute_dev_loss(decoder_outputs, Variable(ans_seqs[:, 1:]), Variable(ans_lens) - 1)
+        '''
+        loss = compute_dev_loss(decoder_outputs, Variable(ans_seqs), Variable(ans_lens))
 
         return loss.view(-1, 100)
  
@@ -407,7 +412,10 @@ class AttnDecoder(nn.Module):
                 words = self.word_dist(decoder_outputs[:, step, :]).max(dim=1)[1]
                 decoder_input = self.embed(words).unsqueeze(1)
         
-        return decoder_outputs, ans_seqs, ans_lens
+        if train:
+            return decoder_outputs, ans_seqs, ans_lens
+        else:
+            return decoder_outputs, opt_seqs, opt_lens
 
     def generate(self, img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens):
         decoder_outputs, _ , _ = self.forward(img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens, 100, 0, False)
@@ -423,12 +431,10 @@ class AttnDecoder(nn.Module):
 
     def evaluate(self, img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens):
         decoder_outputs, ans_seqs, ans_lens = self.forward(img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens, 100, 1, False)
-        decoder_outputs = self.word_dist(decoder_outputs)
+        decoder_outputs = self.word_dist(decoder_outputs[:, :20, :])
         length = ans_seqs.size(1)
         batch_size = len(img_seqs)
-        ans_seqs = ans_seqs.unsqueeze(1).expand(batch_size * 10, 100, length).contiguous().view(-1, length)
-        ans_lens = ans_lens.unsqueeze(1).expand(batch_size * 10, 100).contiguous().view(-1)
-        loss = compute_dev_loss(decoder_outputs, Variable(ans_seqs[:, 1:]), Variable(ans_lens) - 1)
+        loss = compute_dev_loss(decoder_outputs, Variable(ans_seqs), Variable(ans_lens))
 
         return loss.view(-1, 100)
 

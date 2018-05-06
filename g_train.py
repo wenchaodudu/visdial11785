@@ -38,7 +38,7 @@ if __name__ == '__main__':
     vocab_size = len(dictionary)+3
     print(vocab_size)
     word_vectors = np.random.uniform(low=-0.1, high=0.1, size=(vocab_size, embedding_dim))
-    glove = open('data/glove.6B.200d.txt').readlines()
+    glove = open('data/glove.6B.200d.txt', encoding='latin1').readlines()
     found = 0
     for line in glove:
         word, vec = line.split(' ', 1)
@@ -54,8 +54,7 @@ if __name__ == '__main__':
         if opt.baseline:
             net = BaselineAttnDecoder(embedding_dim, hidden_size, vocab_size, word_vectors)
         else:
-            #net = MatchingNetwork(embedding_dim, hidden_size, vocab_size, word_vectors)
-            raise NotImplementedError
+            net = AttnDecoder(embedding_dim, hidden_size, vocab_size, word_vectors)
         optimizer = torch.optim.Adam(filter(lambda x: x.requires_grad, net.parameters()), lr=opt.lr)
     if opt.cuda:
         net.cuda()

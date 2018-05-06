@@ -45,7 +45,7 @@ if __name__ == '__main__':
     print(found)
     
     if opt.use_saved:
-        net = torch.load(opt.model_path + 'torch_model.pt')
+        net = torch.load(opt.model_path + 'torch_model_0.pt')
         optimizer = torch.load(opt.model_path + 'optimizer.pt')
     else:
         if opt.baseline:
@@ -57,7 +57,7 @@ if __name__ == '__main__':
         net.cuda()
 
     best_res = 0
-    for epoch in range(opt.training_epoch):
+    for epoch in range(0, opt.training_epoch):
         # Train
         if epoch:
             train_loss = 0
@@ -103,7 +103,7 @@ if __name__ == '__main__':
         torch.save(optimizer, opt.model_path + 'optimizer.pt')
 
         print('Learning rate: ', opt.lr)
-        if epoch % 5 == 4:
+        if epoch % 3 == 2:
             opt.lr *= 0.5
-            optimizer = torch.optim.Adam(filter(lambda x: x.requires_grad, net.parameters()), lr=opt.lr)
+            optimizer = torch.optim.Adam(net.parameters(), lr=opt.lr)
     print('Finished Training')

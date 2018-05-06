@@ -172,31 +172,43 @@ class BaselineAttnDecoder(nn.Module):
     def init_hidden(self, ques_hidden, img_seqs):
         return Variable(torch.zeros(ques_hidden.size(0), 1, self.hidden_size).float().cuda())
 
-    def forward(self, img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens, num_neg, sampling_rate):
+    def forward(self, img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens, num_neg, sampling_rate, train=True):
         img_seqs = Variable(torch.from_numpy(np.vstack(img_seqs))).cuda()
         batch_size = img_seqs.size(0)
         img_seqs = img_seqs.view(batch_size, 16, 256)
         img_seqs = img_seqs.unsqueeze(1).expand(batch_size, 10, 16, 256).contiguous().view(-1, 16, 256)
 
         ques_seqs = torch.from_numpy(np.concatenate(ques_seqs).astype(np.int32)).long().cuda()
-        ans_seqs = torch.from_numpy(np.concatenate(ans_seqs).astype(np.int32)).long().cuda()
-
         ques_lens = torch.from_numpy(np.concatenate(ques_lens).astype(np.int32)).long().cuda()
-        ans_lens = torch.from_numpy(np.concatenate(ans_lens).astype(np.int32)).long().cuda()
-
         ques_hidden, _ = self.embed_utterance(ques_seqs, ques_lens, True)
-        ans_embed = self.embed_utterance(ans_seqs, ans_lens, False)
+        length = ques_hidden.size(1)
+        ans_seqs = torch.from_numpy(np.concatenate(ans_seqs).astype(np.int32)).long().cuda()
+        ans_lens = torch.from_numpy(np.concatenate(ans_lens).astype(np.int32)).long().cuda()
+        if train:
+            ans_embed = self.embed_utterance(ans_seqs, ans_lens, False)
+            decoder_outputs = Variable(torch.FloatTensor(batch_size * 10, self.max_len, self.input_size).cuda())
+        else:
+            opt_seqs = torch.from_numpy(np.concatenate(opt_seqs).astype(np.int32)).long().cuda()
+            opt_seqs = opt_seqs.view(-1, opt_seqs.size(2))
+            opt_lens = torch.from_numpy(np.concatenate(opt_lens).astype(np.int32)).long().cuda()
+            opt_lens = opt_lens.view(-1)
+            ans_embed = self.embed_utterance(opt_seqs, opt_lens, False)
+            decoder_outputs = Variable(torch.FloatTensor(batch_size * 1000, self.max_len, self.input_size).cuda())
+            img_seqs = img_seqs.unsqueeze(1).expand(batch_size * 10, 100, 16, 256).contiguous().view(-1, 16, 256)
+            ques_hidden = ques_hidden.unsqueeze(1).expand(batch_size * 10, 100, length, self.hidden_size).contiguous().view(-1, length, self.hidden_size)
+
         decoder_hidden = self.init_hidden(ques_hidden, img_seqs)
         decoder_input = ans_embed[:, 0].unsqueeze(1)
-        decoder_outputs = Variable(torch.FloatTensor(batch_size * 10, self.max_len, self.input_size).cuda())
-        length = ques_hidden.size(1)
         for step in range(self.max_len):
             a_key = self.a_key(decoder_hidden.squeeze(1))
 
             q_key = self.q_key(ques_hidden)
             q_value = self.q_value(ques_hidden)
             q_energy = torch.bmm(q_key, a_key.unsqueeze(2)).squeeze(2)
-            q_mask  = torch.arange(length).long().repeat(ques_hidden.size(0), 1) < ques_lens.repeat(length, 1).transpose(0, 1)
+            if train:
+                q_mask  = torch.arange(length).long().cuda().repeat(ques_hidden.size(0), 1) < ques_lens.repeat(length, 1).transpose(0, 1)
+            else:
+                q_mask  = torch.arange(length).long().cuda().repeat(ques_hidden.size(0), 1) < ques_lens.repeat(length * 100, 1).transpose(0, 1)
             q_energy[~q_mask] = -np.inf
             q_weights = F.softmax(q_energy, dim=1).unsqueeze(1)
             q_context = torch.bmm(q_weights, q_value).squeeze(1)
@@ -219,7 +231,7 @@ class BaselineAttnDecoder(nn.Module):
         
         return decoder_outputs, ans_seqs, ans_lens
 
-    def generate(self, img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens, num_neg, sampling_rate):
+    def generate(self, img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens):
         img_seqs = Variable(torch.from_numpy(np.vstack(img_seqs))).cuda()
         batch_size = img_seqs.size(0)
         img_seqs = img_seqs.view(batch_size, 16, 256)
@@ -240,7 +252,7 @@ class BaselineAttnDecoder(nn.Module):
             q_key = self.q_key(ques_hidden)
             q_value = self.q_value(ques_hidden)
             q_energy = torch.bmm(q_key, a_key.unsqueeze(2)).squeeze(2)
-            q_mask  = torch.arange(length).long().repeat(ques_hidden.size(0), 1) < ques_lens.repeat(length, 1).transpose(0, 1)
+            q_mask  = torch.arange(length).long().cuda().repeat(ques_hidden.size(0), 1) < ques_lens.repeat(length, 1).transpose(0, 1)
             q_energy[~q_mask] = -np.inf
             q_weights = F.softmax(q_energy, dim=1).unsqueeze(1)
             q_context = torch.bmm(q_weights, q_value).squeeze(1)
@@ -258,7 +270,8 @@ class BaselineAttnDecoder(nn.Module):
             words = self.word_dist(decoder_outputs[:, step, :]).max(dim=1)[1]
             decoder_input = self.embed(words).unsqueeze(1)
         
-        return decoder_outputs, ans_seqs, ans_lens
+        decoder_outputs = self.word_dist(decoder_outputs)
+        return decoder_outputs
 
     def loss(self, img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens, num_neg, sampling_rate):
         decoder_outputs, ans_seqs, ans_lens = self.forward(img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens, num_neg, sampling_rate)
@@ -267,12 +280,16 @@ class BaselineAttnDecoder(nn.Module):
         
         return loss
 
-    def evaluate(self, img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens, num_neg, sampling_rate):
-        decoder_outputs, ans_seqs, ans_lens = self.generate(img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens, num_neg, sampling_rate)
-        decoder_outputs = self.word_dist(opt_logits)
-        loss = compute_loss(decoder_outputs, Variable(ans_seqs[:, 1:]), Variable(ans_lens) - 1)
+    def evaluate(self, img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens):
+        decoder_outputs, ans_seqs, ans_lens = self.forward(img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens, 100, 1, False)
+        decoder_outputs = self.word_dist(decoder_outputs)
+        length = ans_seqs.size(1)
+        batch_size = len(img_seqs)
+        ans_seqs = ans_seqs.unsqueeze(1).expand(batch_size * 10, 100, length).contiguous().view(-1, length)
+        ans_lens = ans_lens.unsqueeze(1).expand(batch_size * 10, 100).contiguous().view(-1)
+        loss = compute_dev_loss(decoder_outputs, Variable(ans_seqs[:, 1:]), Variable(ans_lens) - 1)
 
-        return decoder_outputs, loss
+        return loss.view(-1, 100)
 
 
 class SimpleEncoder(nn.Module):

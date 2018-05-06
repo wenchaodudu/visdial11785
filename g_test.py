@@ -8,8 +8,8 @@ import numpy as np
 from g_data_loader import *
 from model import *
 
-start_ind = 8834
-end_ind = 8835
+start_ind = 8846
+end_ind = 8847
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -49,7 +49,6 @@ if __name__ == '__main__':
         if i % 100 == 1:
             print(i, mrr / count, rat1 / count)
         img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, cap_lens, ques_lens, ans_lens, opt_lens = data
-        #output, opt_score = net.evaluate(img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens, opt.num_neg, 0.8)
         '''
         output = net.generate(img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens)
         text = output.max(2)[1].data.cpu().numpy()

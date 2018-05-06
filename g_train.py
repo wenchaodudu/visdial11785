@@ -9,8 +9,8 @@ import numpy as np
 from g_data_loader import *
 from model import *
 
-start_ind = 8834
-end_ind = 8835
+start_ind = 8846
+end_ind = 8847
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -61,7 +61,7 @@ if __name__ == '__main__':
         net.cuda()
 
     best_res = 0
-    for epoch in range(1, opt.training_epoch):
+    for epoch in range(opt.training_epoch):
         # Train
         train_loss = 0
         net.train()
@@ -83,7 +83,7 @@ if __name__ == '__main__':
         torch.save(optimizer, opt.model_path + 'optimizer_' + str(epoch) + '.pt')
 
         print('Learning rate: ', opt.lr)
-        if epoch % 3 == 2:
+        if epoch % 5 == 4:
             opt.lr *= 0.5
-            optimizer = torch.optim.Adam(net.parameters(), lr=opt.lr)
+            optimizer = torch.optim.Adam(filter(lambda x: x.requires_grad, net.parameters()), lr=opt.lr)
     print('Finished Training')

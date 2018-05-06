@@ -9,8 +9,8 @@ import numpy as np
 import pdb 
 from masked_cel import compute_loss, compute_dev_loss
 
-start_ind = 8834
-end_ind = 8835
+start_ind = 8846
+end_ind = 8847
 
 class Embedding(nn.Module):
     """ 

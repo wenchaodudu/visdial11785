@@ -146,6 +146,7 @@ class BaselineAttnDecoder(nn.Module):
         self.embed = Embedding(vocab_size, input_size, word_vectors, trainable=False)
         self.qencoder = nn.GRU(input_size, hidden_size)
         self.decoder = nn.GRU(input_size + hidden_size * 2, hidden_size, batch_first=True)
+        #self.decoder = nn.GRU(input_size, hidden_size, batch_first=True)
         self.key_size = 100
         self.q_key = nn.Linear(hidden_size, self.key_size)
         self.q_value = nn.Linear(hidden_size, hidden_size)
@@ -154,6 +155,7 @@ class BaselineAttnDecoder(nn.Module):
         self.a_key = nn.Linear(hidden_size, self.key_size)
         self.max_len = 21
         self.out = nn.Linear(hidden_size * 3, input_size)
+        #self.out = nn.Linear(hidden_size, input_size)
         self.word_dist = nn.Linear(input_size, vocab_size)
         self.init_hidden1 = nn.Linear(hidden_size, hidden_size // 2)
         self.init_hidden2 = nn.Linear(4096, hidden_size // 2)
@@ -200,9 +202,7 @@ class BaselineAttnDecoder(nn.Module):
             opt_lens = opt_lens.view(-1)
             ans_embed = self.embed_utterance(opt_seqs, opt_lens, False)
             decoder_outputs = Variable(torch.FloatTensor(batch_size * 1000, self.max_len, self.input_size).cuda())
-            
             decoder_hidden = decoder_hidden.unsqueeze(1).expand(batch_size * 10, 100, 1, self.hidden_size).contiguous().view(-1, 1, self.hidden_size)
-            
             img_seqs = img_seqs.unsqueeze(1).expand(batch_size * 10, 100, 16, 256).contiguous().view(-1, 16, 256)
             ques_hidden = ques_hidden.unsqueeze(1).expand(batch_size * 10, 100, length, self.hidden_size).contiguous().view(-1, length, self.hidden_size)
 
@@ -229,8 +229,10 @@ class BaselineAttnDecoder(nn.Module):
             
             context = torch.cat((q_context, i_context), dim=1)
             decoder_output, decoder_hidden = self.decoder(torch.cat((decoder_input, context.unsqueeze(1)), dim=2), decoder_hidden.transpose(0, 1))
+            #decoder_output, decoder_hidden = self.decoder(decoder_input, decoder_hidden.transpose(0, 1))
             decoder_hidden = decoder_hidden.transpose(0, 1)
             decoder_outputs[:, step, :] = self.out(torch.cat((decoder_output.squeeze(1), context), dim=1))
+            #decoder_outputs[:, step, :] = self.out(decoder_output.squeeze(1))
             if np.random.uniform() < sampling_rate and step < self.max_len - 2:
                 decoder_input = ans_embed[:, step+1].unsqueeze(1)
             else:
@@ -378,6 +380,7 @@ class AttnDecoder(nn.Module):
             opt_lens = opt_lens.view(-1)
             ans_embed = self.embed_utterance(opt_seqs, opt_lens, False)
             decoder_outputs = Variable(torch.FloatTensor(batch_size * 1000, self.max_len, self.input_size).cuda())
+            decoder_hidden = decoder_hidden.unsqueeze(1).expand(batch_size * 10, 100, 1, self.hidden_size).contiguous().view(-1, 1, self.hidden_size)
             img_seqs = img_seqs.unsqueeze(1).expand(batch_size * 10, 100, 32, 128).contiguous().view(-1, 32, 128)
             ques_hidden = ques_hidden.unsqueeze(1).expand(batch_size * 10, 100, length, self.hidden_size).contiguous().view(-1, length, self.hidden_size)
 

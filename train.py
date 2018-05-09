@@ -45,38 +45,39 @@ if __name__ == '__main__':
     print(found)
     
     if opt.use_saved:
-        net = torch.load(opt.model_path + 'torch_model_0.pt')
+        net = torch.load(opt.model_path + 'torch_model_1.pt')
         optimizer = torch.load(opt.model_path + 'optimizer.pt')
     else:
         if opt.baseline:
             net = BaselineAttnDecoder(embedding_dim, hidden_size, vocab_size, word_vectors)
         else:
-            #net = MatchingNetwork(embedding_dim, hidden_size, vocab_size, word_vectors)
+            net = MatchingNetwork(embedding_dim, hidden_size, vocab_size, word_vectors)
         optimizer = torch.optim.Adam(filter(lambda x: x.requires_grad, net.parameters()), lr=opt.lr)
     if opt.cuda:
         net.cuda()
 
     best_res = 0
-    for epoch in range(0, opt.training_epoch):
+    for epoch in range(2, opt.training_epoch):
         # Train
-        if epoch:
-            train_loss = 0
-            net.train()
-            last = time.time()
-            for i, data in enumerate(trainloader):
-                img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens = data
-                optimizer.zero_grad()
-                loss = net.loss(img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens, opt.num_neg)
-                loss.backward()
-                #nn.utils.clip_grad_norm(net.parameters(), 1, 2)
-                optimizer.step()
-                train_loss += loss.cpu().data[0]
-                if i % 300 == 0:
-                    print('Training loss: ', train_loss / min(i+1, 300), time.time() - last)
-                    train_loss = 0
+        train_loss = 0
+        net.train()
+        last = time.time()
+        '''
+        for i, data in enumerate(trainloader):
+            img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens = data
+            optimizer.zero_grad()
+            loss = net.loss(img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens, opt.num_neg)
+            loss.backward()
+            #nn.utils.clip_grad_norm(net.parameters(), 1, 2)
+            optimizer.step()
+            train_loss += loss.cpu().data[0]
+            if i % 300 == 0:
+                print('Training loss: ', train_loss / min(i+1, 300), time.time() - last)
+                train_loss = 0
 
-            print('Saving model...')
-            torch.save(net, opt.model_path + 'torch_model_' + str(epoch) + '.pt')
+        print('Saving model...')
+        torch.save(net, opt.model_path + 'torch_model_' + str(epoch) + '.pt')
+        '''
 
         mrr, rat1, rat2, rat3, rat5 = 0, 0, 0, 0, 0
         count = 0

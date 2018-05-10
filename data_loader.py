@@ -13,7 +13,11 @@ class Dataset(data.Dataset):
     def __init__(self, data_file, img_file, train=True):
         data = h5py.File(data_file, 'r')
         images = h5py.File(img_file, 'r')
-        pdb.set_trace()
+        if train:
+            images = np.load('./data/image_train.npy')
+        else:
+            images = np.load('./data/image_val.npy')
+        self.images = images
         if train:
             self.captions = data['cap_train'][()]
             self.questions =  data['ques_train'][()]
@@ -23,7 +27,7 @@ class Dataset(data.Dataset):
             self.answers = data['ans_train'][()]
             raw_options = data['opt_train'][()]
             opt_list = data['opt_list_train'][()]
-            self.images = images['images_train'][()]
+            #self.images = images['images_train'][()]
             self.ans_idx = data['ans_index_train'][()]
         else:
             self.captions = data['cap_val'][()]
@@ -34,7 +38,7 @@ class Dataset(data.Dataset):
             self.answers = data['ans_val'][()]
             raw_options = data['opt_val'][()]
             opt_list = data['opt_list_val'][()]
-            self.images = images['images_val'][()]
+            #self.images = images['images_val'][()]
             self.ans_idx = data['ans_index_val'][()]
 
         self.length = self.captions.shape[0]
@@ -46,7 +50,7 @@ class Dataset(data.Dataset):
                 self.opt_len[x, y, :] = raw_opt_len[raw_options[x][y]-1]
 
     def __getitem__(self, index):
-        return self.images[index], self.captions[index], self.questions[index], \
+        return self.images[index][np.newaxis, :], self.captions[index], self.questions[index], \
                self.answers[index], self.options[index], self.ans_idx[index], \
                self.ques_len[index], self.ans_len[index], self.opt_len[index]
 

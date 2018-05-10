@@ -534,14 +534,14 @@ class MatchingNetwork(nn.Module):
         self.score = nn.Bilinear(hidden_size, hidden_size, 1)
         self.criterion = nn.CrossEntropyLoss()
         self.ww_M = nn.Linear(hidden_size, hidden_size)
-        self.iw_M = nn.Linear(256, input_size)
-        self.iu_M = nn.Linear(256, hidden_size)
+        self.iw_M = nn.Linear(512, input_size)
+        self.iu_M = nn.Linear(512, hidden_size)
         self.ww_conv = nn.Conv2d(2, 1, kernel_size=(3, 3), padding=1)
-        self.iw_conv = nn.Conv2d(2, 1, kernel_size=(1, 3), padding=1)
-        self.ww_pool = nn.AvgPool2d((3, 3), stride=(1, 1))
-        self.iw_pool = nn.AvgPool2d((1, 3), stride=(1, 1))
-        self.fc1 = nn.Linear(324 + 324, 300)
-        self.fc2 = nn.Linear(300, 1)
+        self.iw_conv = nn.Conv2d(2, 1, kernel_size=(3, 3), padding=1)
+        self.ww_pool = nn.MaxPool2d((3, 3), stride=(1, 1))
+        self.iw_pool = nn.MaxPool2d((3, 3), stride=(2, 1))
+        self.fc1 = nn.Linear(324 + 432, 100)
+        self.fc2 = nn.Linear(100, 1)
 
     def pad_seq(self, seqs):
         size, length, dim = list(seqs.size())
@@ -566,6 +566,7 @@ class MatchingNetwork(nn.Module):
 
     def forward(self, img_seqs, cap_seqs, ques_seqs, ans_seqs, opt_seqs, ans_idx_seqs, ques_lens, ans_lens, opt_lens, num_neg):
         img_seqs = Variable(torch.from_numpy(np.vstack(img_seqs))).cuda()
+        img_seqs = img_seqs.view(-1, 512, 49).transpose(1, 2)
         batch_size = img_seqs.size(0)
 
         ques_seqs = torch.from_numpy(np.concatenate(ques_seqs).astype(np.int32)).long().cuda()
@@ -601,7 +602,7 @@ class MatchingNetwork(nn.Module):
         ww_conv_output = ww_conv_output.view(ww_conv_output.size(0), -1)
 
         # image answer matching
-        img_seqs = img_seqs.unsqueeze(1).expand(batch_size, 10 * num_neg, 4096).contiguous().view(-1, 4096).view(-1, 16, 256)
+        img_seqs = img_seqs.unsqueeze(1).expand(batch_size, 10 * num_neg, 49, 512).contiguous().view(-1, 49, 512)
         iw_sim = self.iw_M(img_seqs)
         iw_sim = torch.bmm(iw_sim, opt_embed.transpose(1, 2))
         iu_sim = self.iu_M(img_seqs)

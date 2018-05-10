@@ -13,6 +13,7 @@ class Dataset(data.Dataset):
     def __init__(self, data_file, img_file, train=True):
         data = h5py.File(data_file, 'r')
         images = h5py.File(img_file, 'r')
+        pdb.set_trace()
         if train:
             self.captions = data['cap_train'][()]
             self.questions =  data['ques_train'][()]

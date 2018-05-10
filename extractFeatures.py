@@ -24,7 +24,7 @@ dialogs = data['data']['dialogs']
 class VGG16(nn.Module):
     def __init__(self):
         super(VGG16, self).__init__()
-        self.features = nn.Sequential(*list(vgg16.features.children())[:-3])
+        self.features = nn.Sequential(*list(vgg16.features.children()))
     def forward(self, x):
         x = self.features(x)
         return x
@@ -32,9 +32,11 @@ class VGG16(nn.Module):
 mean = np.array([0.485, 0.456, 0.406])[:, np.newaxis, np.newaxis]
 std = np.array([0.229, 0.224, 0.225])[:, np.newaxis, np.newaxis]
 
-net = VGG16()
+net = VGG16().cuda()
 numOfDialogs = len(dialogs)
-output = torch.FloatTensor(numOfDialogs, 512, 14, 14).zero_()
+
+output = np.zeros((1000, 512, 7, 7), dtype=float)
+cnt = 1
 for i in range(numOfDialogs):
     imgIds = dialogs[i]['image_id']
     img = coco.loadImgs(imgIds)[0]
@@ -43,7 +45,10 @@ for i in range(numOfDialogs):
     I = np.transpose(I, (2, 0, 1))
     I = (I / 255 - mean) / std
     I = np.expand_dims(I, axis=0)
-    output[i,:,:,:] = net(Variable(torch.from_numpy(I).float())).data
+    output[i % 1000,:,:,:] = net(Variable(torch.from_numpy(I).float().cuda())).cpu().data.numpy()
 
-pdb.set_trace()
-torch.save(output.numpy(), 'vgg16_feature.npy')
+    if i % 1000 == 999:
+        np.save('vgg16_val_feature_' + str(cnt) + '.npy', output)
+        output = np.zeros((1000, 512, 7, 7), dtype=float)
+        cnt += 1
+        print(i+1)
